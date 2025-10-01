@@ -1,14 +1,22 @@
-// assets/app_aisstream.js
-// TrackWarships — AISStream WebSocket client
-// Requisiti: in index.html deve esistere window.AISSTREAM_CONFIG.API_KEY
-// Leaflet già incluso da CDN. Vedi index.html per gli ID dei controlli UI.
+// TrackWarships — client WebSocket per il relay Cloudflare Worker
+// Il Worker tiene segreta la APIKey AISStream e inoltra frame già normalizzati.
+//
+// Requisiti HTML (già presenti nel tuo index.html):
+//  - Leaflet caricato da CDN
+//  - elementi: #map, #status, #q, #chk-military, #chk-israeli, #chk-potential,
+//              #quick-port, #btn-reconnect, #result-list
 
 (function () {
-  // --- Map setup ---
+  // === CONFIG ===
+  const RELAY_URL = "wss://trackwarship.zonkeynet.workers.dev/ws"; // <-- cambia qui se usi altro dominio
+  const RESUBSCRIBE_MOVE_THRESHOLD = 0.20;   // ~0.2°: cambia bbox → resubscribe
+  const LIST_REFRESH_MS = 1500;              // rinfresca la lista a intervalli
+
+  // === MAPPA ===
   const map = L.map("map", { worldCopyJump: true }).setView([48.5, 10.0], 5); // centro UE
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 18 }).addTo(map);
 
-  // --- UI handles ---
+  // === UI ===
   const statusEl = document.getElementById("status");
   const qEl = document.getElementById("q");
   const chkMil = document.getElementById("chk-military");
@@ -18,24 +26,28 @@
   const btnReconnect = document.getElementById("btn-reconnect");
   const listEl = document.getElementById("result-list");
 
-  // --- State ---
+  // === STATO ===
   let ws = null;
-  let reconnectDelay = 1000; // ms, exponential backoff up to 30s
-  let currentBbox = null;
+  let reconnectDelay = 1000; // ms (backoff esponenziale, max 30s)
+  let currentBbox = null;    // [south, west, north, east]
   const markers = new Map(); // id -> Leaflet marker
-  const objects = new Map(); // id -> last normalized vessel object
+  const objects = new Map(); // id -> ultimo oggetto normalizzato
 
-  const AIS_KEY = (window.AISSTREAM_CONFIG && window.AISSTREAM_CONFIG.API_KEY) || "";
-
-  // --- Helpers ---
+  // === HELPERS ===
   function getBboxFromMap() {
     const b = map.getBounds();
-    // Leaflet: SW e NE
-    const sw = b.getSouthWest(); // {lat, lng}
-    const ne = b.getNorthEast(); // {lat, lng}
-    return [sw.lat, sw.lng, ne.lat, ne.lng];
+    const sw = b.getSouthWest();
+    const ne = b.getNorthEast();
+    return [sw.lat, sw.lng, ne.lat, ne.lng]; // [S W N E]
   }
 
+  function wantedBuckets() {
+    const s = new Set();
+    if (chkMil.checked) s.add("military");
+    if (chkIl.checked) s.add("israeli");
+    if (chkPot.checked) s.add("potential_arms");
+    return s;
+  }
 
   function matchesText(v) {
     const q = qEl.value.trim().toLowerCase();
@@ -47,44 +59,29 @@
     );
   }
 
-  // Classifica in: 'military' | 'israeli' | 'potential_arms' | null
-  function classify(v) {
-    const code = toNumber(v.ais_shiptype || v.SHIPTYPE || v.shiptype_code || v.type);
-    const flag = (v.flag || v.country || "").toUpperCase();
-    const mmsi = String(v.mmsi || "");
-    const typeText = (
-      (v.ship_type_text || v.type_text || v.type || "") +
-      " " +
-      (v.cargo || "")
-    ).toLowerCase();
-
-    const isMilitary = code === 35; // AIS 35: Military ops
-    const isIsraeli = flag === "IL" || mmsi.startsWith("428"); // MID 428
-    const isPotential =
-      /(vehicle|pctc|ro-?ro)/.test(typeText) ||
-      /heavy.?lift|project/.test(typeText) ||
-      /multi.?purpose|mpp/.test(typeText);
-
-    if (isMilitary) return "military";
-    if (isIsraeli) return "israeli";
-    if (isPotential) return "potential_arms";
-    return null;
-  }
-
   function toNumber(x) {
     const n = Number(x);
     return Number.isFinite(n) ? n : null;
   }
 
-  function wantedBuckets() {
-    const s = new Set();
-    if (chkMil.checked) s.add("military");
-    if (chkIl.checked) s.add("israeli");
-    if (chkPot.checked) s.add("potential_arms");
-    return s;
+  // Fallback locale se il Worker non mette _bucket (ma il nostro lo mette)
+  function classifyLocal(v) {
+    const code = toNumber(v.ais_shiptype);
+    const flag = (v.flag || "").toUpperCase();
+    const mmsi = String(v.mmsi || "");
+    const t = (v.type || "").toLowerCase();
+    if (code === 35) return "military";
+    if (flag === "IL" || mmsi.startsWith("428")) return "israeli";
+    if (/(vehicle|pctc|ro-?ro)/.test(t) || /heavy.?lift|project/.test(t) || /multi.?purpose|mpp/.test(t)) {
+      return "potential_arms";
+    }
+    return null;
   }
 
-  // --- Rendering ---
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
   function popupHtml(v) {
     const url = v.name ? `https://www.vesselfinder.com/vessels/${encodeURIComponent(v.name)}` : "#";
     const label =
@@ -105,13 +102,6 @@
     </div>`;
   }
 
-  function escapeHtml(s) {
-    return String(s)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
-  }
-
   function upsertMarker(id, v) {
     if (!v.lat || !v.lon) return;
     if (!markers.has(id)) {
@@ -125,14 +115,14 @@
   function renderList() {
     const wanted = wantedBuckets();
     const arr = Array.from(objects.values())
-      .filter((v) => v._bucket && wanted.has(v._bucket) && matchesText(v))
+      .filter((v) => (v._bucket || classifyLocal(v)) && wanted.has(v._bucket || classifyLocal(v)) && matchesText(v))
       .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
 
     listEl.innerHTML = "";
     for (const v of arr) {
       const li = document.createElement("li");
       li.innerHTML = `<b>${escapeHtml(v.name || "—")}</b>
-        <div class="muted small">${v._bucket} • Flag ${escapeHtml(v.flag || "—")} • MMSI ${escapeHtml(v.mmsi || "—")} • IMO ${escapeHtml(v.imo || "—")}</div>
+        <div class="muted small">${escapeHtml(v._bucket || classifyLocal(v) || "—")} • Flag ${escapeHtml(v.flag || "—")} • MMSI ${escapeHtml(v.mmsi || "—")} • IMO ${escapeHtml(v.imo || "—")}</div>
         <div>${escapeHtml(v.type || "—")} — Dest: ${escapeHtml(v.destination || "—")}</div>`;
       li.onclick = () => {
         if (v.lat && v.lon) map.setView([v.lat, v.lon], 10);
@@ -141,92 +131,65 @@
     }
   }
 
-  // --- WebSocket handling ---
+  // === WEBSOCKET al RELAY ===
   function openStream() {
-    if (!AIS_KEY) {
-      statusEl.textContent = "Manca AISSTREAM_CONFIG.API_KEY in index.html";
-      return;
-    }
-
-    // reset connessione se già aperta
+    // Chiudi eventuale socket precedente
     if (ws) {
-      try {
-        ws.close();
-      } catch (e) {}
+      try { ws.close(); } catch (e) {}
       ws = null;
     }
 
-    // bbox corrente
+    // BBOX corrente e memorizzazione
     const bbox = getBboxFromMap();
     currentBbox = bbox;
 
-    ws = new WebSocket("wss://stream.aisstream.io/v0/stream");
+    // Costruisci payload di subscribe per il Worker
+    const payload = {
+      type: "subscribe",
+      bbox: [[bbox[0], bbox[1]], [bbox[2], bbox[3]]], // [[S,W],[N,E]]
+      // messageTypes: ["PositionReport","StaticDataReport"], // opzionale
+      // mmsi: ["123456789"]                                 // opzionale
+    };
+
+    ws = new WebSocket(RELAY_URL);
 
     ws.onopen = () => {
       reconnectDelay = 1000; // reset backoff
-
-      // bbox corrente: [south, west, north, east]
-      const south = bbox[0], west = bbox[1], north = bbox[2], east = bbox[3];
-
-      // Messaggio di sottoscrizione CORRETTO secondo la doc:
-      // - APIKey (camel case)
-      // - BoundingBoxes: array di box, ogni box = [[lat1, lon1], [lat2, lon2]]
-      //   qui usiamo [ [south, west], [north, east] ]
-      const sub = {
-        APIKey: AIS_KEY,
-        BoundingBoxes: [
-          [[south, west], [north, east]]
-        ],
-        // opzionali:
-        // FiltersShipMMSI: ["123456789","987654321"],
-        // FilterMessageTypes: ["PositionReport","StaticDataReport"]
-      };
-
-      ws.send(JSON.stringify(sub));
-      statusEl.textContent = "Connesso allo stream… (subscription inviata)";
+      ws.send(JSON.stringify(payload));
+      statusEl.textContent = "Connesso al relay… (subscription inviata)";
     };
-
 
     ws.onmessage = (evt) => {
       try {
         const msg = JSON.parse(evt.data);
 
-        // AISStream invia diversi tipi di messaggi; qui gestiamo PositionReport & StaticDataReport
-        const pr = msg?.Message?.PositionReport;
-        const sd = msg?.Message?.StaticDataReport;
+        if (msg.type === "status") {
+          // debug / UX
+          statusEl.textContent = `Relay: ${msg.status || "ok"}`;
+          return;
+        }
+        if (msg.type === "error") {
+          statusEl.textContent = `Errore relay: ${msg.error || "unknown"}`;
+          return;
+        }
+        if (msg.type !== "vessel" || !msg.data) return;
 
-        if (!pr && !sd) return;
-
-        const meta = msg?.MetaData || {};
-        // normalizzazione
-        const v = {
-          name: sd?.Name || meta?.ShipName || null,
-          mmsi: meta?.MMSI || pr?.UserID || null,
-          imo: sd?.IMO || null,
-          lat: pr?.Latitude ?? pr?.LatitudeDegrees ?? null,
-          lon: pr?.Longitude ?? pr?.LongitudeDegrees ?? null,
-          flag: meta?.Flag || sd?.Flag || null,
-          type: sd?.ShipTypeText || meta?.ShipType || null,
-          destination: sd?.Destination || null,
-          ais_shiptype: sd?.ShipType || pr?.Type || null,
-        };
-
-        // classificazione
-        const bucket = classify(v);
+        const v = msg.data;               // già normalizzato dal Worker
+        const bucket = v._bucket || classifyLocal(v);
         if (!bucket) return;
         v._bucket = bucket;
 
-        // id stabile
+        // Stato locale
         const id = String(v.mmsi || v.imo || v.name || Math.random());
-
-        // salvataggio stato + render
         objects.set(id, v);
+
+        // Disegna solo se passa i filtri correnti
         const wanted = wantedBuckets();
         if (wanted.has(bucket) && matchesText(v)) {
           upsertMarker(id, v);
         }
       } catch (e) {
-        // silenzioso: alcuni frame possono non interessare
+        // ignora frame non parse-abili
       }
     };
 
@@ -237,14 +200,12 @@
     };
 
     ws.onerror = () => {
-      statusEl.textContent = "Errore stream.";
-      try {
-        ws.close();
-      } catch (e) {}
+      statusEl.textContent = "Errore connessione relay.";
+      try { ws.close(); } catch (e) {}
     };
   }
 
-  // --- UI events ---
+  // === EVENTI UI ===
   btnReconnect.addEventListener("click", openStream);
   [chkMil, chkIl, chkPot].forEach((el) => el.addEventListener("change", renderList));
   qEl.addEventListener("input", renderList);
@@ -256,16 +217,16 @@
     map.setView([lat, lon], z || 12);
   });
 
-  // Riapri lo stream quando il bbox cambia significativamente
+  // Resubscribe quando il bbox cambia “abbastanza”
   map.on("moveend", () => {
     const b2 = getBboxFromMap();
-    const moved = !currentBbox || b2.some((v, i) => Math.abs(v - currentBbox[i]) > 0.2);
+    const moved = !currentBbox || b2.some((v, i) => Math.abs(v - currentBbox[i]) > RESUBSCRIBE_MOVE_THRESHOLD);
     if (moved) openStream();
   });
 
-  // refresh lista periodico per ridurre lavoro su onmessage
-  setInterval(renderList, 1500);
+  // Refresh lista periodico
+  setInterval(renderList, LIST_REFRESH_MS);
 
-  // kick-off
+  // Avvio
   openStream();
 })();
