@@ -161,7 +161,7 @@
     ws.onopen = () => {
       reconnectDelay = 1000; // reset backoff
       const sub = {
-        Apikey: AIS_KEY,
+        APIKey: AIS_KEY,
         // BoundingBoxes: [[south, west, north, east]]
         BoundingBoxes: [[bbox[0], bbox[1], bbox[2], bbox[3]]],
         // EventTypes: ["positionReport","staticDataReport"], // opzionali
