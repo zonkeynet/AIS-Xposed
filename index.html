@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TrackWarships — AIS Europe Map</title>
+  <title>TrackWarships — AIS Europe Map (Relay)</title>
 
   <!-- Leaflet CSS -->
   <link
@@ -13,18 +13,19 @@
     crossorigin=""
   />
 
-  <!-- Stili locali -->
+  <!-- Stili -->
   <link rel="stylesheet" href="assets/style.css" />
 
   <!-- Meta UX -->
-  <meta name="description" content="Mappa AIS in tempo reale (AISStream) per visualizzare navi militari, israeliane e potenzialmente adatte al trasporto mezzi/armi intorno ai porti europei." />
+  <meta name="description" content="Mappa AIS in tempo reale (relay Cloudflare) per visualizzare navi militari, israeliane e potenzialmente adatte al trasporto mezzi/armi intorno ai porti europei." />
   <meta name="robots" content="noindex,nofollow" />
 </head>
 <body>
   <header>
-    <h1>TrackWarships (AISStream)</h1>
+    <h1>TrackWarships (Relay)</h1>
     <p class="muted small">
-      Dati AIS in tempo reale via WebSocket (aisstream.io). I messaggi AIS non indicano il contenuto del carico.
+      Dati AIS in tempo reale via relay WebSocket (la chiave AISStream resta lato server).
+      I messaggi AIS non indicano il contenuto del carico.
     </p>
   </header>
 
@@ -71,7 +72,7 @@
   </aside>
 
   <footer class="muted small">
-    © TrackWarships — Stream fornito da <a href="https://aisstream.io/" target="_blank" rel="noopener">aisstream.io</a>.
+    © TrackWarships — Relay Cloudflare Workers.
     Usa responsabilmente. Questa mappa non certifica contenuti o carichi.
   </footer>
 
@@ -82,15 +83,7 @@
     crossorigin=""
   ></script>
 
-  <!-- Configurazione AISStream: inserisci la tua API key -->
-  <script>
-    // Sostituisci la stringa con la tua chiave da https://aisstream.io/
-    window.AISSTREAM_CONFIG = {
-      API_KEY: "f6cf83a47135b2f829c730a77e797bcb399af5a6"
-    };
-  </script>
-
-  <!-- App client-side (WebSocket AISStream) -->
+  <!-- App client-side (WebSocket verso il relay) -->
   <script src="assets/app_aisstream.js"></script>
 </body>
 </html>
