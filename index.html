@@ -3,15 +3,29 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="robots" content="noindex,nofollow" />
-  <title>ShipWatch — Navi militari / IL / potenziale trasporto</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <title>TrackWarships — AIS Europe Map</title>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+
+  <!-- Stili locali -->
   <link rel="stylesheet" href="assets/style.css" />
+
+  <!-- Meta UX -->
+  <meta name="description" content="Mappa AIS in tempo reale (AISStream) per visualizzare navi militari, israeliane e potenzialmente adatte al trasporto mezzi/armi intorno ai porti europei." />
+  <meta name="robots" content="noindex,nofollow" />
 </head>
 <body>
   <header>
-    <h1>ShipWatch</h1>
-    <p class="muted small">Vista AIS indicativa. I dati non indicano il contenuto del carico.</p>
+    <h1>TrackWarships (AISStream)</h1>
+    <p class="muted small">
+      Dati AIS in tempo reale via WebSocket (aisstream.io). I messaggi AIS non indicano il contenuto del carico.
+    </p>
   </header>
 
   <section class="toolbar">
@@ -20,10 +34,14 @@
       <label><input type="checkbox" id="chk-israeli" checked> Bandiera IL / MID 428</label>
       <label><input type="checkbox" id="chk-potential" checked> Potenziale (RO-RO/PCTC, Heavy-lift, MPP)</label>
     </div>
+
     <div class="group">
-      <label>Ricerca <input id="q" placeholder="nome / MMSI / IMO" /></label>
-      <button id="btn-refresh">Aggiorna</button>
+      <label>Ricerca
+        <input id="q" placeholder="nome / MMSI / IMO" inputmode="search" />
+      </label>
+      <button id="btn-reconnect" type="button" title="Riconnetti lo stream">Riconnetti</button>
     </div>
+
     <div class="group">
       <label>Porti UE rapidi
         <select id="quick-port">
@@ -35,29 +53,44 @@
           <option value="51.949,4.125,11">Rotterdam</option>
           <option value="51.265,4.400,12">Anversa</option>
           <option value="45.428,12.279,12">Venezia</option>
+          <option value="53.541,9.985,12">Amburgo</option>
+          <option value="52.400,4.893,12">Amsterdam</option>
+          <option value="54.373,18.658,12">Danzica</option>
         </select>
       </label>
     </div>
-    <span id="status" class="muted"></span>
+
+    <span id="status" class="muted" aria-live="polite"></span>
   </section>
 
-  <div id="map"></div>
+  <div id="map" role="application" aria-label="Mappa AIS Europa"></div>
 
-  <aside id="list-panel">
+  <aside id="list-panel" aria-label="Elenco navi filtrate">
     <h2>Risultati</h2>
     <ul id="result-list"></ul>
   </aside>
 
-  <footer class="muted small">© ShipWatch — Usa responsabilmente. Fonti AIS via proxy.</footer>
+  <footer class="muted small">
+    © TrackWarships — Stream fornito da <a href="https://aisstream.io/" target="_blank" rel="noopener">aisstream.io</a>.
+    Usa responsabilmente. Questa mappa non certifica contenuti o carichi.
+  </footer>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+
+  <!-- Configurazione AISStream: inserisci la tua API key -->
   <script>
-    // Configura il tuo Worker qui ↓↓↓
-    window.SHIPWATCH_CONFIG = {
-      WORKER_URL: 'https://trackwarship.zonkeynet.workers.dev', // es. https://shipwatch.massimiliano.workers.dev
-      CLIENT_TOKEN: 'fbc0f4ab0f2d6dec36168ed043110dad'               // lo stesso usato come secret nel Worker
+    // Sostituisci la stringa con la tua chiave da https://aisstream.io/
+    window.AISSTREAM_CONFIG = {
+      API_KEY: "f6cf83a47135b2f829c730a77e797bcb399af5a6"
     };
   </script>
-  <script src="assets/app.js"></script>
+
+  <!-- App client-side (WebSocket AISStream) -->
+  <script src="assets/app_aisstream.js"></script>
 </body>
 </html>
