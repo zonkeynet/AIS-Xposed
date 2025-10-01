@@ -30,8 +30,12 @@
   // --- Helpers ---
   function getBboxFromMap() {
     const b = map.getBounds();
-    return [b.getSouth(), b.getWest(), b.getNorth(), b.getEast()];
+    // Leaflet: SW e NE
+    const sw = b.getSouthWest(); // {lat, lng}
+    const ne = b.getNorthEast(); // {lat, lng}
+    return [sw.lat, sw.lng, ne.lat, ne.lng];
   }
+
 
   function matchesText(v) {
     const q = qEl.value.trim().toLowerCase();
@@ -160,15 +164,28 @@
 
     ws.onopen = () => {
       reconnectDelay = 1000; // reset backoff
+
+      // bbox corrente: [south, west, north, east]
+      const south = bbox[0], west = bbox[1], north = bbox[2], east = bbox[3];
+
+      // Messaggio di sottoscrizione CORRETTO secondo la doc:
+      // - APIKey (camel case)
+      // - BoundingBoxes: array di box, ogni box = [[lat1, lon1], [lat2, lon2]]
+      //   qui usiamo [ [south, west], [north, east] ]
       const sub = {
         APIKey: AIS_KEY,
-        // BoundingBoxes: [[south, west, north, east]]
-        BoundingBoxes: [[bbox[0], bbox[1], bbox[2], bbox[3]]],
-        // EventTypes: ["positionReport","staticDataReport"], // opzionali
+        BoundingBoxes: [
+          [[south, west], [north, east]]
+        ],
+        // opzionali:
+        // FiltersShipMMSI: ["123456789","987654321"],
+        // FilterMessageTypes: ["PositionReport","StaticDataReport"]
       };
+
       ws.send(JSON.stringify(sub));
-      statusEl.textContent = "Connesso allo stream…";
+      statusEl.textContent = "Connesso allo stream… (subscription inviata)";
     };
+
 
     ws.onmessage = (evt) => {
       try {
