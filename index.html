@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex,nofollow" />
+  <title>ShipWatch — Navi militari / IL / potenziale trasporto</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <link rel="stylesheet" href="assets/style.css" />
+</head>
+<body>
+  <header>
+    <h1>ShipWatch</h1>
+    <p class="muted small">Vista AIS indicativa. I dati non indicano il contenuto del carico.</p>
+  </header>
+
+  <section class="toolbar">
+    <div class="group">
+      <label><input type="checkbox" id="chk-military" checked> Militari</label>
+      <label><input type="checkbox" id="chk-israeli" checked> Bandiera IL / MID 428</label>
+      <label><input type="checkbox" id="chk-potential" checked> Potenziale (RO-RO/PCTC, Heavy-lift, MPP)</label>
+    </div>
+    <div class="group">
+      <label>Ricerca <input id="q" placeholder="nome / MMSI / IMO" /></label>
+      <button id="btn-refresh">Aggiorna</button>
+    </div>
+    <div class="group">
+      <label>Porti UE rapidi
+        <select id="quick-port">
+          <option value="">—</option>
+          <option value="43.547,10.300,12">Livorno</option>
+          <option value="44.405,8.932,12">Genova</option>
+          <option value="41.352,2.159,12">Barcellona</option>
+          <option value="43.345,5.353,12">Marsiglia</option>
+          <option value="51.949,4.125,11">Rotterdam</option>
+          <option value="51.265,4.400,12">Anversa</option>
+          <option value="45.428,12.279,12">Venezia</option>
+        </select>
+      </label>
+    </div>
+    <span id="status" class="muted"></span>
+  </section>
+
+  <div id="map"></div>
+
+  <aside id="list-panel">
+    <h2>Risultati</h2>
+    <ul id="result-list"></ul>
+  </aside>
+
+  <footer class="muted small">© ShipWatch — Usa responsabilmente. Fonti AIS via proxy.</footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <script>
+    // Configura il tuo Worker qui ↓↓↓
+    window.SHIPWATCH_CONFIG = {
+      WORKER_URL: 'https://trackwarship.zonkeynet.workers.dev', // es. https://shipwatch.massimiliano.workers.dev
+      CLIENT_TOKEN: '<CLIENT_TOKEN>'               // lo stesso usato come secret nel Worker
+    };
+  </script>
+  <script src="assets/app.js"></script>
+</body>
+</html>

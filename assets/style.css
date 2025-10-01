@@ -1,0 +1,16 @@
+:root { --panel-bg:#fff; --muted:#666; --line:#e6e6e6; }
+html, body { height: 100%; margin: 0; font-family: system-ui, Arial, sans-serif; }
+#map { height: 70vh; }
+header, .toolbar, footer { padding: 10px 14px; }
+.toolbar { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; background: var(--panel-bg); border-top:1px solid var(--line); border-bottom:1px solid var(--line); }
+.group { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+label { display: inline-flex; gap: 6px; align-items: center; }
+input, select, button { padding: 6px 8px; }
+button { cursor: pointer; }
+
+#list-panel { padding: 10px 14px; border-top:1px solid var(--line); }
+#result-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+#result-list li { border:1px solid var(--line); border-radius:8px; padding:8px; background:#fff; }
+#result-list b { display:block; }

@@ -1,0 +1,17 @@
+{
+  "version": "2025-10-01",
+  "categories": [
+    { "id": "military", "rule": "ais_shiptype==35" },
+    { "id": "israeli",  "rule": "flag==IL || mmsi.startsWith(428)" },
+    { "id": "potential_arms", "rule": "type matches (Vehicle|Ro-Ro|PCTC|Heavy-lift|Project|MPP)" }
+  ],
+  "ports_eu": [
+    { "name": "Livorno", "lat": 43.547, "lon": 10.300, "z": 12 },
+    { "name": "Genova",  "lat": 44.405, "lon": 8.932,  "z": 12 },
+    { "name": "Barcellona", "lat": 41.352, "lon": 2.159, "z": 12 },
+    { "name": "Marsiglia", "lat": 43.345, "lon": 5.353, "z": 12 },
+    { "name": "Rotterdam", "lat": 51.949, "lon": 4.125, "z": 11 },
+    { "name": "Anversa", "lat": 51.265, "lon": 4.400, "z": 12 },
+    { "name": "Venezia", "lat": 45.428, "lon": 12.279, "z": 12 }
+  ]
+}
