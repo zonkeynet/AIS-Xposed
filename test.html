@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<h3>WS Relay Tester</h3>
+<pre id="log"></pre>
+<script>
+const log = (x)=>document.getElementById('log').textContent += x + "\n";
+const ws = new WebSocket("wss://trackwarship.zonkeynet.workers.dev/ws");
+ws.onopen = ()=>{
+  log("open client → relay");
+  ws.send(JSON.stringify({type:"subscribe", bbox:[[40,2],[55,18]], messageTypes:["PositionReport","StaticDataReport"]}));
+};
+ws.onmessage = (e)=>log(e.data.slice(0,200));
+ws.onclose = (e)=>log("close "+e.code+" "+e.reason);
+ws.onerror = (e)=>log("error");
+</script>
