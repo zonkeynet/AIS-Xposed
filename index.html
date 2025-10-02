@@ -1,349 +1,271 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Monitoraggio Navale Europa</title>
-    <!-- Caricamento di Tailwind CSS per lo stile -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Caricamento di Leaflet CSS per la mappa -->
-    <!-- RIMOSSO ATTRIBUTI INTEGRITY E CROSSORIGIN PER RISOLVERE ERRORE DI CARICAMENTO SRI -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <style>
-        /* Stili personalizzati per il layout */
-        #map {
-            height: 100vh;
-            width: 100%;
-        }
-        .vessel-card {
-            cursor: pointer;
-            transition: transform 0.1s ease-in-out;
-        }
-        .vessel-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.06);
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>AIS Xposed</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap');
+    body{font-family:'Roboto Mono',monospace;color:#e5e7eb}
+    .badge-glow{box-shadow:0 0 5px rgba(255,255,255,.5)}
+    #map{height:100vh;width:100%;z-index:0}
+    .vessel-card{cursor:pointer;transition:all .2s ease-in-out;background:#1f2937;border-color:#374151}
+    .vessel-card:hover{transform:translateY(-2px);box-shadow:0 0 15px rgba(79,70,229,.5);border-color:#4f46e5}
+    .leaflet-popup-content-wrapper{border-radius:8px;background:#1f2937;color:#e5e7eb}
+    .leaflet-popup-content{margin:14px;font-size:14px}
+    .custom-marker svg{transition:transform .5s linear}
+    .tag-badge{display:inline-block;margin:2px 6px 0 0;padding:2px 8px;border-radius:9999px;font-size:11px;border:1px solid rgba(255,255,255,.2);background:rgba(31,41,55,.9);color:#e5e7eb;white-space:nowrap}
+    .tag--un{border-color:#60a5fa;color:#93c5fd}
+    .tag--invest{border-color:#f59e0b;color:#fbbf24}
+    .tag--union{border-color:#34d399;color:#6ee7b7}
+    .tag--deny{border-color:#f87171;color:#fca5a5}
+    .tag--energy{border-color:#a78bfa;color:#c4b5fd}
+    .tag--ammo{border-color:#fb923c;color:#fdba74}
+    .tag--settle{border-color:#4ade80;color:#86efac}
+    .tag--israel{border-color:#818cf8;color:#a5b4fc}
+    .tag--sanct{border-color:#f43f5e;color:#fda4af}
+    .tag--mil{border-color:#ef4444;color:#fca5a5}
+  </style>
 </head>
-<body class="bg-gray-50 flex h-screen overflow-hidden font-sans">
+<body class="bg-gray-900 flex h-screen overflow-hidden text-gray-200">
 
-    <!-- Pannello Laterale per Filtri e Lista Navi -->
-    <div id="sidebar" class="w-full md:w-80 flex-shrink-0 bg-white shadow-xl p-4 overflow-y-auto z-10">
-        <h1 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">Monitoraggio Marittimo</h1>
-        <p id="connectionStatus" class="text-xs font-semibold mb-3 p-1 rounded text-yellow-800 bg-yellow-100">
-            Connessione al Worker in corso...
-        </p>
+<button id="openSidebarButton" class="md:hidden fixed top-4 left-4 z-40 p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition duration-300">
+  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/></svg>
+</button>
+<div id="sidebarOverlay" class="fixed inset-0 bg-black opacity-0 md:opacity-0 pointer-events-none transition-opacity duration-300 z-20"></div>
 
-        <!-- Sezione Filtri -->
-        <div id="filters" class="mb-6 p-4 bg-gray-50 rounded-lg border">
-            <h2 class="text-lg font-semibold text-gray-700 mb-3">Filtri Categoria</h2>
-            <div class="space-y-2">
-                <label class="flex items-center text-sm font-medium text-gray-600">
-                    <input type="checkbox" id="filterMilitary" onchange="applyFilters()" class="form-checkbox h-4 w-4 text-red-600 rounded">
-                    <span class="ml-2">Navi Militari (Rosso)</span>
-                </label>
-                <label class="flex items-center text-sm font-medium text-gray-600">
-                    <input type="checkbox" id="filterArms" onchange="applyFilters()" class="form-checkbox h-4 w-4 text-yellow-500 rounded">
-                    <span class="ml-2">Trasporto Armi (Giallo)</span>
-                </label>
-                <label class="flex items-center text-sm font-medium text-gray-600">
-                    <input type="checkbox" id="filterIsrael" onchange="applyFilters()" class="form-checkbox h-4 w-4 text-blue-600 rounded">
-                    <span class="ml-2">Correlate a Israele (Blu)</span>
-                </label>
-            </div>
-            <div class="mt-4">
-                <label for="destinationPort" class="block text-sm font-medium text-gray-700 mb-1">Porto di Destinazione:</label>
-                <input type="text" id="destinationPort" oninput="applyFilters()" placeholder="Es: Livorno, Genova..." class="w-full p-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500 text-sm">
-            </div>
-        </div>
-
-        <!-- Sezione Lista Navi -->
-        <h2 class="text-xl font-bold text-gray-800 mb-3">Lista Navi (<span id="vesselCount">0</span>)</h2>
-        <div id="vesselList" class="space-y-3">
-            <!-- Le schede delle navi verranno inserite qui -->
-            <p class="text-center text-gray-500">Nessuna nave corrispondente ai filtri.</p>
-        </div>
+<aside id="sidebar" class="w-full md:w-96 fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 flex-shrink-0 bg-gray-800 shadow-2xl p-4 flex flex-col z-30 border-r border-gray-700">
+  <header class="pb-2 border-b border-gray-700 flex justify-between items-start">
+    <div>
+      <h1 class="text-2xl font-bold text-indigo-400">AIS Xposed <span class="text-sm text-red-500">_LIVE_</span></h1>
+      <p id="connectionStatus" class="text-sm font-medium mt-2 p-2 rounded-lg text-yellow-300 bg-gray-700 border border-yellow-500 transition-colors duration-300 badge-glow">
+        Connessione al server in corso...
+      </p>
     </div>
+    <button id="closeSidebarButton" class="md:hidden p-1 text-gray-400 hover:text-gray-200">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+    </button>
+  </header>
 
-    <!-- Area Mappa -->
-    <div id="map" class="flex-grow"></div>
+  <div class="mt-4 p-4 bg-gray-900 rounded-xl border border-gray-700">
+    <h2 class="text-lg font-semibold text-gray-200 mb-3">Filtri / Payload Analysis</h2>
+    <div class="space-y-3 text-sm">
+      <label class="flex items-center text-indigo-400">
+        <input type="checkbox" id="filterIsrael" onchange="applyFilters()" class="form-checkbox h-5 w-5 text-indigo-500 rounded focus:ring-indigo-400 border-indigo-500 bg-gray-700" checked>
+        <span class="ml-3">Affiliate a Israele (INDIGO)</span>
+      </label>
+      <label class="flex items-center text-red-400">
+        <input type="checkbox" id="filterMilitary" onchange="applyFilters()" class="form-checkbox h-5 w-5 text-red-500 rounded focus:ring-red-400 border-red-500 bg-gray-700" checked>
+        <span class="ml-3">Militari / Logistica (RED)</span>
+      </label>
+      <label class="flex items-center text-amber-400">
+        <input type="checkbox" id="filterArms" onchange="applyFilters()" class="form-checkbox h-5 w-5 text-amber-500 rounded focus:ring-amber-400 border-amber-500 bg-gray-700" checked>
+        <span class="ml-3">Potenziale Trasporto Armi (AMBER)</span>
+      </label>
+    </div>
+    <div class="mt-5">
+      <label for="destinationPort" class="block text-sm font-medium text-gray-400 mb-1">Target Destination:</label>
+      <input type="text" id="destinationPort" oninput="applyFilters()" placeholder="ES: LIVORNO, HAIFA..." class="w-full p-2 border border-gray-600 bg-gray-700 text-gray-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+    </div>
+  </div>
 
-    <!-- Caricamento di Leaflet JS -->
-    <!-- RIMOSSO ATTRIBUTI INTEGRITY E CROSSORIGIN PER RISOLVERE ERRORE DI CARICAMENTO SRI -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <script>
-        // === SETUP ENVIRONMENT AND INITIALIZATIONS ===
-        // Costanti globali fornite dall'ambiente
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+  <div class="mt-4 flex-grow overflow-y-auto">
+    <h2 class="text-xl font-bold text-gray-200 mb-3">Vessel Registry (<span id="vesselCount" class="text-indigo-400">0</span>)</h2>
+    <div id="vesselList" class="space-y-3 pr-2">
+      <p id="vesselListPlaceholder" class="text-center text-gray-500 py-6 text-sm">Waiting for incoming AIS data stream...</p>
+    </div>
+  </div>
+</aside>
 
-        let map;
-        let vesselData = []; // Array per memorizzare i dati AIS in tempo reale
-        let markerLayer = new L.LayerGroup();
-        let ws; // Variabile per la connessione WebSocket
+<main id="map" class="flex-grow"></main>
 
-        // Dati fittizi per simulare il flusso in arrivo dal Worker (solo come fallback)
-        const SIMULATED_STREAM_DATA = [
-            { id: "215880000", name: "Zim Livorno", type: "Container", military: false, arms: false, destination: "Livorno, IT", is_israel_related: true, lat: 43.1, lon: 10.0, status: "En Route", mmsi: "215880000" },
-            { id: "235112000", name: "HMS Aegis", type: "Destroyer", military: true, arms: true, destination: "Piraeus, GR", is_israel_related: false, lat: 40.5, lon: 20.5, status: "En Route", mmsi: "235112000" },
-        ];
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+  // 👉 CAMBIA QUI con il tuo Worker
+  const WORKER_URL = 'wss://ais-xposed.your-subdomain.workers.dev/api/vessels';
 
-        // Mappa dei colori per i marcatori
-        const COLOR_MAP = {
-            military: '#D90000', // Rosso scuro
-            arms: '#FFD700',     // Oro/Giallo
-            israel: '#0047AB',   // Blu profondo
-            default: '#22C55E'   // Verde
-        };
+  const map = L.map('map').setView([38.0, 15.0], 5);
+  const vesselDataMap = new Map();
+  const markerLayer = new L.LayerGroup().addTo(map);
+  let ws;
 
-        // Funzione per ottenere l'icona del marcatore
-        function getMarkerIcon(vessel) {
-            let color = COLOR_MAP.default;
+  const COLOR_MAP = { military:'#f87171', arms:'#fbbf24', israel:'#6366f1', default:'#4ade80' };
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+  const openBtn = document.getElementById('openSidebarButton');
+  const closeBtn = document.getElementById('closeSidebarButton');
 
-            // Priorità: Militare > Armi > Israele
-            if (vessel.military) {
-                color = COLOR_MAP.military; 
-            } else if (vessel.arms) {
-                color = COLOR_MAP.arms; 
-            } else if (vessel.is_israel_related) {
-                color = COLOR_MAP.israel; 
-            }
+  function toggleSidebar(open){
+    if (window.innerWidth>=768) return;
+    if (open){ sidebar.classList.remove('-translate-x-full'); overlay.classList.add('opacity-50','pointer-events-auto'); }
+    else { sidebar.classList.add('-translate-x-full'); overlay.classList.remove('opacity-50','pointer-events-auto'); }
+  }
+  openBtn.addEventListener('click', ()=>toggleSidebar(true));
+  closeBtn.addEventListener('click', ()=>toggleSidebar(false));
+  overlay.addEventListener('click', ()=>toggleSidebar(false));
 
-            // Icona Nave (basata sul geo-punto)
-            const svgContent = `
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <!-- Forma di nave semplificata -->
-                    <path d="M12 2L6 22H18L12 2Z" fill="${color}" stroke="#FFF" stroke-width="1.5" stroke-linejoin="round"/>
-                </svg>`;
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap & CARTO', subdomains:'abcd', maxZoom:20
+  }).addTo(map);
 
-            return L.divIcon({
-                className: 'custom-marker',
-                html: svgContent,
-                iconSize: [24, 24],
-                iconAnchor: [12, 12], // Centrato per la forma triangolare
-                popupAnchor: [0, -12]
-            });
+  function getMarkerIcon(v){
+    let color = COLOR_MAP.default;
+    if (v.military) color=COLOR_MAP.military;
+    else if (v.arms) color=COLOR_MAP.arms;
+    else if (v.is_israel_related) color=COLOR_MAP.israel;
+    const svg = `<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${v.cog||0}deg);">
+      <path d="M14 2L7 26H21L14 2Z" fill="${color}" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+    return L.divIcon({ className:'custom-marker', html:svg, iconSize:[28,28], iconAnchor:[14,14], popupAnchor:[0,-14] });
+  }
+
+  function tagClass(tag){
+    const t = (tag||'').toLowerCase();
+    if (t.includes('ohchr')||t.includes('un')) return 'tag-badge tag--un';
+    if (t.includes('investigative')) return 'tag-badge tag--invest';
+    if (t.includes('union')||t.includes('blocked')) return 'tag-badge tag--union';
+    if (t.includes('denial')) return 'tag-badge tag--deny';
+    if (t.includes('energy')||t.includes('lng')||t.includes('coal')) return 'tag-badge tag--energy';
+    if (t.includes('ammo')) return 'tag-badge tag--ammo';
+    if (t.includes('settlement')) return 'tag-badge tag--settle';
+    if (t.includes('israel')) return 'tag-badge tag--israel';
+    if (t.includes('sanction')) return 'tag-badge tag--sanct';
+    if (t.includes('military')) return 'tag-badge tag--mil';
+    return 'tag-badge';
+  }
+
+  function createPopupContent(v){
+    let categories='';
+    if (v.military) categories+='<span class="font-bold text-red-400">::MILITARY::</span><br>';
+    if (v.arms) categories+='<span class="font-bold text-amber-400">::ARMS_TRANSPORT::</span><br>';
+    if (v.is_israel_related) categories+='<span class="font-bold text-indigo-400">::ISRAEL_AFFILIATE::</span><br>';
+
+    const tags = Array.isArray(v.tags)? v.tags : [];
+    const tagsHTML = tags.length? `
+      <div class="mt-2 text-xs">
+        <span class="font-bold text-gray-400">Fonti / motivazioni:</span>
+        <div class="mt-1">${tags.map(t=>`<span class="${tagClass(t)}">${t}</span>`).join('')}</div>
+      </div>` : '';
+
+    return `
+      <strong class="text-lg text-white">${v.name}</strong><br>
+      <hr class="my-1 border-gray-600">
+      <span class="text-gray-400">MMSI:</span> ${v.mmsi}<br>
+      <span class="text-gray-400">Destinazione:</span> ${v.destination || 'N/A'}<br>
+      <span class="text-gray-400">Stato:</span> ${v.status || 'N/A'}<br>
+      <span class="text-gray-400">Velocità:</span> ${v.sog ? v.sog+' nodi' : 'N/A'}<br>
+      ${categories}${tagsHTML}
+    `;
+  }
+
+  function renderMapMarkers(list){
+    const displayed = new Set();
+    list.forEach(v=>{
+      displayed.add(v.mmsi);
+      const icon = getMarkerIcon(v);
+      if (v.marker){
+        v.marker.setLatLng([v.lat, v.lon]).setIcon(icon);
+      } else {
+        v.marker = L.marker([v.lat, v.lon], {icon}).addTo(markerLayer);
+        v.marker.bindPopup(()=>createPopupContent(v));
+      }
+    });
+    // cleanup
+    [...vesselDataMap.values()].forEach(v=>{
+      if (v.marker && !displayed.has(v.mmsi)){
+        markerLayer.removeLayer(v.marker);
+        v.marker=null;
+      }
+    });
+  }
+
+  function renderVesselList(list){
+    const listContainer = document.getElementById('vesselList');
+    const countElement = document.getElementById('vesselCount');
+    const placeholderEl = document.getElementById('vesselListPlaceholder');
+    listContainer.innerHTML=''; countElement.textContent=list.length;
+    if (placeholderEl) placeholderEl.style.display = list.length>0? 'none':'block';
+
+    list.forEach(v=>{
+      let badgeClass, badgeText;
+      if (v.military){ badgeClass='bg-red-900 text-red-300 border-red-500 badge-glow'; badgeText='MIL_FORCE'; }
+      else if (v.arms){ badgeClass='bg-amber-900 text-amber-300 border-amber-500 badge-glow'; badgeText='ARMS_LOADED'; }
+      else if (v.is_israel_related){ badgeClass='bg-indigo-900 text-indigo-300 border-indigo-500 badge-glow'; badgeText='ZIM_AFFILIATE'; }
+      else { badgeClass='bg-green-900 text-green-300 border-green-500'; badgeText='STANDARD'; }
+
+      const tags = Array.isArray(v.tags)? v.tags : [];
+      const smallTags = tags.slice(0,3).map(t=>`<span class="${tagClass(t)}">${t}</span>`).join('');
+
+      const card = document.createElement('div');
+      card.className="vessel-card p-3 rounded-lg bg-gray-900 border border-gray-700 shadow-xl";
+      card.innerHTML = `
+        <div class="flex justify-between items-center">
+          <p class="text-base font-semibold text-gray-50 truncate">${v.name}</p>
+          <span class="text-xs font-bold px-2 py-1 rounded-full border ${badgeClass}">${badgeText}</span>
+        </div>
+        <p class="text-sm text-gray-400 truncate">MMSI: ${v.mmsi}</p>
+        <p class="text-sm text-gray-400 truncate">Dest: ${v.destination || 'N/A'}</p>
+        ${tags.length? `<div class="mt-2">${smallTags}</div>`:''}
+      `;
+      card.onclick=()=>{
+        if (v.marker && v.lat && v.lon){
+          map.setView([v.lat, v.lon], 10);
+          v.marker.openPopup();
+          toggleSidebar(false);
         }
+      };
+      listContainer.appendChild(card);
+    });
+  }
 
-        // Funzione per disegnare o aggiornare i marcatori sulla mappa
-        function renderMapMarkers(vessels) {
-            markerLayer.clearLayers();
+  function handleIncomingVesselMessage(update){
+    if (!update.id || update.lat==null || update.lon==null) return;
+    const existing = vesselDataMap.get(update.id);
+    vesselDataMap.set(update.id, {...existing, ...update, marker:existing?.marker});
+    applyFilters();
+  }
 
-            vessels.forEach(vessel => {
-                const icon = getMarkerIcon(vessel);
-                const marker = L.marker([vessel.lat, vessel.lon], { icon: icon })
-                    .bindPopup(`
-                        <strong class="text-lg">${vessel.name}</strong><br>
-                        Tipo: ${vessel.type}<br>
-                        Destinazione: <strong>${vessel.destination}</strong><br>
-                        Stato: ${vessel.status}<br>
-                        ${vessel.military ? '<span class="text-red-600 font-bold">MILITARE</span><br>' : ''}
-                        ${vessel.arms ? '<span class="text-yellow-600 font-bold">TRASPORTO ARMI</span><br>' : ''}
-                        ${vessel.is_israel_related ? '<span class="text-blue-600 font-bold">CORRELATA ISRAELE</span><br>' : ''}
-                    `);
-                
-                marker.addTo(markerLayer);
-                vessel.marker = marker; // Collega il marcatore all'oggetto nave
-            });
+  function applyFilters(){
+    const filters = {
+      military: document.getElementById('filterMilitary').checked,
+      arms: document.getElementById('filterArms').checked,
+      israel: document.getElementById('filterIsrael').checked,
+      destination: (document.getElementById('destinationPort').value||'').toLowerCase().trim()
+    };
+    const allOff = !filters.military && !filters.arms && !filters.israel;
+    const arr = Array.from(vesselDataMap.values());
+    const filtered = arr.filter(v=>{
+      if (v.lat==null || v.lon==null) return false;
+      const cat = allOff ||
+        (filters.military && v.military) ||
+        (filters.arms && v.arms) ||
+        (filters.israel && v.is_israel_related);
+      const dst = !filters.destination || ((v.destination||'').toLowerCase().includes(filters.destination));
+      return cat && dst;
+    }).sort((a,b)=>(a.name||'z').localeCompare(b.name||'z'));
+    renderMapMarkers(filtered);
+    renderVesselList(filtered);
+  }
 
-            if (!map.hasLayer(markerLayer)) {
-                markerLayer.addTo(map);
-            }
-        }
+  function setStatus(message,type){
+    const el=document.getElementById('connectionStatus');
+    el.textContent=message;
+    el.className='text-sm font-medium mt-2 p-2 rounded-lg transition-colors duration-300 badge-glow ';
+    if (type==='ok') el.classList.add('text-green-300','bg-green-900','border','border-green-500');
+    else if (type==='error') el.classList.add('text-red-300','bg-red-900','border','border-red-500');
+    else el.classList.add('text-yellow-300','bg-yellow-900','border','border-yellow-500');
+  }
 
-        // Funzione per aggiornare la lista laterale
-        function renderVesselList(vessels) {
-            const listContainer = document.getElementById('vesselList');
-            const countElement = document.getElementById('vesselCount');
-            listContainer.innerHTML = ''; // Svuota la lista
-            countElement.textContent = vessels.length;
-
-            if (vessels.length === 0) {
-                listContainer.innerHTML = '<p class="text-center text-gray-500 py-4">Nessuna nave trovata con questi filtri.</p>';
-                return;
-            }
-
-            vessels.forEach(vessel => {
-                const badgeClass = vessel.military ? 'bg-red-100 text-red-800' : 
-                                   vessel.arms ? 'bg-yellow-100 text-yellow-800' : 
-                                   vessel.is_israel_related ? 'bg-blue-100 text-blue-800' : 
-                                   'bg-green-100 text-green-800';
-
-                const card = document.createElement('div');
-                card.className = "vessel-card p-3 rounded-lg bg-white shadow border border-gray-200 hover:border-indigo-400";
-                card.innerHTML = `
-                    <p class="text-sm font-bold text-gray-800">${vessel.name || 'Nome Sconosciuto'}</p>
-                    <p class="text-xs text-gray-600 truncate">Dest: ${vessel.destination || 'N/A'}</p>
-                    <span class="inline-block text-xs font-semibold px-2 py-0.5 mt-1 rounded-full ${badgeClass}">
-                        ${vessel.military ? 'Militare' : vessel.arms ? 'Armi' : vessel.is_israel_related ? 'Israel' : 'Generica'}
-                    </span>
-                `;
-                
-                // Funzionalità: cliccando sulla card, la mappa si centra sul marcatore
-                card.onclick = () => {
-                    if (vessel.marker) {
-                        map.setView([vessel.lat, vessel.lon], 10);
-                        vessel.marker.openPopup();
-                    }
-                };
-
-                listContainer.appendChild(card);
-            });
-        }
-
-        // Funzione per elaborare un messaggio AIS in arrivo (già pre-filtrato dal Worker)
-        function handleIncomingVesselMessage(vesselUpdate) {
-            // LOG DI DEBUG: Verifica che il dato venga ricevuto dalla logica
-            console.log("Dato nave ricevuto/aggiornato:", vesselUpdate.name, "Lat:", vesselUpdate.lat, "Lon:", vesselUpdate.lon);
-            
-            // L'ID univoco è l'MMSI
-            const existingIndex = vesselData.findIndex(v => v.id === vesselUpdate.id);
-            
-            if (!vesselUpdate.lat || !vesselUpdate.lon) {
-                // Se mancano coordinate, è un messaggio di metadati o fuori area
-                return; 
-            }
-
-            if (existingIndex !== -1) {
-                // AGGIORNA: La nave è già nella lista. Aggiorna solo posizione e stato.
-                vesselData[existingIndex] = { 
-                    ...vesselData[existingIndex], 
-                    ...vesselUpdate,
-                    name: vesselData[existingIndex].name || vesselUpdate.name,
-                    destination: vesselData[existingIndex].destination || vesselUpdate.destination
-                };
-            } else {
-                // NUOVA NAVE: Aggiungila se ha i dati essenziali
-                vesselData.push(vesselUpdate);
-            }
-
-            // Riapplica i filtri per aggiornare la mappa e la lista in tempo reale
-            applyFilters();
-        }
-
-
-        // SIMULAZIONE DEL FLUSSO DI DATI (sostituisce la connessione WS per l'ambiente sandboxed)
-        let streamIndex = 0;
-        function simulateStreamingData() {
-            if (streamIndex < SIMULATED_STREAM_DATA.length) {
-                handleIncomingVesselMessage(SIMULATED_STREAM_DATA[streamIndex]);
-                streamIndex++;
-            } else if (streamIndex === SIMULATED_STREAM_DATA.length) {
-                console.log("Simulazione: Fine del flusso dati iniziale.");
-                streamIndex++;
-                return;
-            }
-            
-            // Continua a inviare il prossimo pacchetto (se disponibile) ogni 1 secondo
-            if (streamIndex < SIMULATED_STREAM_DATA.length + 1) {
-                 setTimeout(simulateStreamingData, 1000); 
-            }
-        }
-
-        // Funzione per stabilire la connessione WebSocket al Cloudflare Worker
-        function connectWebSocket() {
-            // Usiamo l'indirizzo del tuo Worker
-            const workerUrl = `wss://trackwarships.zonkeynet.workers.dev/api/vessels`; 
-            
-            try {
-                // Tentativo di connessione WebSocket
-                ws = new WebSocket(workerUrl);
-            
-                ws.onopen = () => {
-                    document.getElementById('connectionStatus').textContent = "Connessione Worker Cloudflare: ATTIVA";
-                    document.getElementById('connectionStatus').classList.replace('bg-yellow-100', 'bg-green-100');
-                    document.getElementById('connectionStatus').classList.replace('text-yellow-800', 'text-green-800');
-                    console.log('Connessione WebSocket stabilita con il Worker Cloudflare.');
-                };
-
-                ws.onmessage = (event) => {
-                    // Si assume che il Worker invii messaggi JSON già filtrati
-                    const message = JSON.parse(event.data);
-                    handleIncomingVesselMessage(message);
-                };
-
-                ws.onclose = (event) => {
-                    console.log('Connessione WebSocket chiusa. Tentativo di riconnessione in 5s...');
-                    document.getElementById('connectionStatus').textContent = "Connessione chiusa. Riconnessione in 5s...";
-                    document.getElementById('connectionStatus').classList.replace('bg-green-100', 'bg-red-100');
-                    document.getElementById('connectionStatus').classList.replace('text-green-800', 'text-red-800');
-                    setTimeout(connectWebSocket, 5000); 
-                };
-
-                ws.onerror = (error) => {
-                    console.error('Errore WebSocket:', error);
-                    document.getElementById('connectionStatus').textContent = "Errore di Connessione. Uso Fallback.";
-                    document.getElementById('connectionStatus').classList.replace('bg-green-100', 'bg-red-100');
-                    document.getElementById('connectionStatus').classList.replace('text-green-800', 'text-red-800');
-                    // In caso di errore, avviamo il fallback con i dati simulati
-                    console.log("ATTENZIONE: Avvio della SIMULAZIONE dati a causa di un errore WebSocket."); // LOG DI DEBUG
-                    simulateStreamingData();
-                };
-
-            } catch (error) {
-                // Fallback: se la WS fallisce (es. ambiente restrittivo)
-                console.warn("WebSocket non avviato (errore nel browser o ambiente). Avvio simulazione dati.");
-                document.getElementById('connectionStatus').textContent = "Simulazione dati AIS in corso...";
-                console.log("ATTENZIONE: Avvio della SIMULAZIONE dati a causa di un errore Catch JS."); // LOG DI DEBUG
-                simulateStreamingData();
-            }
-        }
-
-
-        // Funzione principale per applicare i filtri sul dato locale
-        function applyFilters() {
-            const filterMilitary = document.getElementById('filterMilitary').checked;
-            const filterArms = document.getElementById('filterArms').checked;
-            const filterIsrael = document.getElementById('filterIsrael').checked;
-            const destinationPort = document.getElementById('destinationPort').value.toLowerCase().trim();
-
-            const filteredVessels = vesselData.filter(vessel => {
-                // Filtro Categoria
-                const isAnyFilterChecked = filterMilitary || filterArms || filterIsrael;
-                let matchesCategory = true;
-                
-                if (isAnyFilterChecked) {
-                    matchesCategory = (filterMilitary && vessel.military) ||
-                                      (filterArms && vessel.arms) ||
-                                      (filterIsrael && vessel.is_israel_related);
-                }
-                
-                // Filtro Destinazione
-                let matchesDestination = true;
-                if (destinationPort) {
-                    matchesDestination = (vessel.destination || '').toLowerCase().includes(destinationPort);
-                }
-
-                return matchesCategory && matchesDestination;
-            });
-
-            renderMapMarkers(filteredVessels);
-            renderVesselList(filteredVessels);
-        }
-
-        // Funzione che avvia la connessione al Worker
-        async function fetchVesselData() {
-            connectWebSocket(); 
-        }
-
-        // Funzione di inizializzazione
-        function initMap() {
-            // Inizializza la mappa centrata sul Mediterraneo
-            map = L.map('map').setView([38.0, 15.0], 5);
-
-            // Aggiunge un livello di mappa (Tile Layer)
-            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-            }).addTo(map);
-
-            // Avvia il caricamento dei dati (o la connessione al Worker)
-            fetchVesselData();
-        }
-
-        // Avvia l'app al caricamento della finestra
-        window.onload = initMap;
-    </script>
+  function connectWebSocket(){
+    if (ws && (ws.readyState===WebSocket.OPEN || ws.readyState===WebSocket.CONNECTING)) return;
+    ws = new WebSocket(WORKER_URL);
+    ws.onopen = ()=> setStatus('STREAM ONLINE / DATA FLOW ACTIVE','ok');
+    ws.onmessage = (ev)=>{ try{ handleIncomingVesselMessage(JSON.parse(ev.data)); }catch(e){ console.error(e);} };
+    ws.onclose = ()=>{ setStatus('CONNECTION CLOSED. RECONNECTING IN 5 SEC...','error'); setTimeout(connectWebSocket,5000); };
+    ws.onerror = ()=>{ setStatus('CONNECTION ERROR. RETRYING...','error'); try{ws.close();}catch{} };
+  }
+  connectWebSocket();
+</script>
 </body>
 </html>
