@@ -1,56 +1,438 @@
 <!doctype html>
-<meta charset="utf-8"/>
-<title>AIS Live</title>
-<style>
-  body { font-family: system-ui, sans-serif; padding: 16px; }
-  #log { white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-</style>
-<h1>AIS Live</h1>
-<div>State: <span id="state">connecting…</span></div>
-<div>Messages: <span id="count">0</span></div>
-<pre id="log"></pre>
-<script>
-const WS_URL = "wss://ais-proxy.zonkeynet.workers.dev/api/vessels?debug=0"; // ← cambia qui
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <title>AIS Live – Warships & Logistics Tracker</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- Leaflet (CDN) -->
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css"
+    integrity="sha512-pKE1Fq7T+QpYkR9Y8kqBz7F5bq3D3Fqk8lGzH1qA18Zr0VZ2mCU3sW6k21kNwM6Qq+H8nVYzZ6qG5sWwY9g7gQ=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+  />
+  <script
+    src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"
+    integrity="sha512-FAm9ZJt3v0xk1WTsBf49x2k7o3g2Bq0w0o3CkO3QkKpK8O8ZlGzEw3Nw0t8v6J0lguv8o2k3H2yK7O7c9w2z8g=="
+    crossorigin="anonymous"
+    referrerpolicy="no-referrer"
+    defer
+  ></script>
 
-let count = 0;
-const elState = document.getElementById('state');
-const elCount = document.getElementById('count');
-const elLog   = document.getElementById('log');
-
-function log(o){ elLog.textContent += (typeof o === 'string' ? o : JSON.stringify(o)) + "\n"; }
-
-function connect(){
-  elState.textContent = 'connecting…';
-  const ws = new WebSocket(WS_URL);
-
-  ws.addEventListener('open', () => { elState.textContent = 'online'; });
-
-  ws.addEventListener('message', (ev) => {
-    try {
-      const msg = JSON.parse(ev.data);
-      if (msg.ka) return; // keepalive
-      if (msg.info || msg.error) { log(msg); return; }
-
-      // messaggi nave
-      count++; elCount.textContent = String(count);
-      // mostra le prime 3 navi e poi smette di loggare per non saturare
-      if (count <= 3) log(msg);
-
-    } catch (e) {
-      log({ parse_error: String(e), raw: ev.data.slice(0,200) });
+  <style>
+    :root {
+      --bg: #0b1020;
+      --panel: #121933;
+      --accent: #56ccf2;
+      --text: #e6eefc;
+      --muted: #9db2d7;
+      --danger: #ff6b6b;
+      --warn: #f6c177;
+      --ok: #7ad3a3;
+      --chip: #1d2647;
     }
-  });
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Inter, Helvetica, Arial, Apple Color Emoji, Segoe UI Emoji;
+    }
+    header {
+      padding: 14px 16px;
+      background: linear-gradient(180deg, #0f1630, #0b1020);
+      border-bottom: 1px solid #1b254d;
+      position: sticky; top: 0; z-index: 10;
+    }
+    header h1 {
+      margin: 0 0 8px; font-size: 18px; letter-spacing: 0.3px; font-weight: 600;
+    }
+    .toolbar {
+      display: grid; gap: 8px; grid-template-columns: 1fr auto auto auto;
+      align-items: center;
+    }
+    .toolbar input[type="text"] {
+      padding: 10px 12px; border-radius: 10px; border: 1px solid #22305f;
+      background: #0f1530; color: var(--text); outline: none;
+      width: 100%;
+    }
+    .toolbar label {
+      display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+      background: var(--chip); padding: 8px 10px; border-radius: 999px; border: 1px solid #22305f;
+    }
+    .toolbar button {
+      padding: 10px 14px; border-radius: 10px; border: 1px solid #22305f;
+      background: #16214a; color: var(--text); cursor: pointer; font-weight: 600;
+    }
+    .toolbar button:hover { background: #1a2757; }
+    main {
+      display: grid; grid-template-columns: 1fr 420px; gap: 12px; padding: 12px;
+    }
+    #map { height: calc(100vh - 130px); border-radius: 14px; overflow: hidden; border: 1px solid #1b254d; }
+    aside {
+      display: grid; gap: 12px; height: calc(100vh - 130px);
+      grid-template-rows: auto auto 1fr;
+    }
+    .card {
+      background: var(--panel); border: 1px solid #1b254d; border-radius: 14px; padding: 12px;
+    }
+    .stats {
+      display: grid; grid-template-columns: repeat(4,1fr); gap: 8px;
+    }
+    .stat {
+      background: #0f1530; border: 1px solid #22305f; border-radius: 12px; padding: 10px;
+      text-align: center;
+    }
+    .stat .label { font-size: 12px; color: var(--muted); }
+    .stat .value { margin-top: 6px; font-size: 16px; font-weight: 700; }
+    .state-dot { width: 8px; height: 8px; display: inline-block; border-radius: 50%; margin-right: 6px; }
+    .online  { background: var(--ok); }
+    .offline { background: var(--danger); }
+    .warn    { background: var(--warn); }
+    .log {
+      height: 150px; overflow: auto; background: #0f1530; border: 1px solid #22305f; border-radius: 12px; padding: 8px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { padding: 8px 6px; border-bottom: 1px solid #1b254d; color: #d8e3fb; }
+    th { position: sticky; top: 0; background: #16214a; z-index: 1; }
+    .chip {
+      display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; margin: 2px; background: #0f1530; border: 1px solid #22305f; color: #dbe7ff;
+    }
+    .chip.mil { background: #1f2d59; border-color: #314684; }
+    .chip.isr { background: #1d3a46; border-color: #2f5e70; }
+    .chip.arm { background: #4a2231; border-color: #6f3350; }
+    .chip.san { background: #4a2f1d; border-color: #81542f; }
+    .chip.un  { background: #243d2d; border-color: #3b6a4c; }
+    .hint { color: var(--muted); font-size: 12px; }
+    @media (max-width: 1100px) {
+      main { grid-template-columns: 1fr; }
+      aside { height: auto; }
+      #map { height: 50vh; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AIS Live – Warships & Logistics Tracker</h1>
+    <div class="toolbar">
+      <input id="ws-url" type="text"
+             placeholder="wss://ais-proxy.your-domain.workers.dev/api/vessels"
+             aria-label="WebSocket URL" />
+      <label title="Ricevi anche i messaggi ShipStaticData che non hanno posizione">
+        <input id="static-toggle" type="checkbox" /> static=1
+      </label>
+      <button id="connect-btn">Connetti</button>
+      <button id="disconnect-btn">Disconnetti</button>
+    </div>
+    <div class="hint" style="margin-top:8px">
+      Suggerimento: puoi passare il WS via query string: <code>?ws=wss://…/api/vessels</code> e <code>&static=1</code>.
+    </div>
+  </header>
 
-  ws.addEventListener('close', () => {
-    elState.textContent = 'closed – retrying in 2s';
-    setTimeout(connect, 2000);
-  });
+  <main>
+    <div id="map" aria-label="Mappa navi AIS"></div>
 
-  ws.addEventListener('error', () => {
-    elState.textContent = 'error – retrying in 2s';
-    try { ws.close(); } catch {}
-  });
-}
+    <aside>
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px">
+          <div><span id="state-dot" class="state-dot offline"></span><b id="state-label">offline</b></div>
+          <div class="hint">Connessione al Worker (non al provider AIS)</div>
+        </div>
+        <div class="stats">
+          <div class="stat"><div class="label">Messaggi</div><div id="stat-messages" class="value">0</div></div>
+          <div class="stat"><div class="label">Navi tracciate</div><div id="stat-vessels" class="value">0</div></div>
+          <div class="stat"><div class="label">Ultimo update</div><div id="stat-last" class="value">—</div></div>
+          <div class="stat"><div class="label">Errori</div><div id="stat-errors" class="value">0</div></div>
+        </div>
+      </div>
 
-connect();
-</script>
+      <div class="card">
+        <div style="font-weight:600; margin-bottom:6px">Eventi/Diagnostica</div>
+        <div id="log" class="log" aria-live="polite"></div>
+      </div>
+
+      <div class="card" style="overflow:auto">
+        <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px">
+          <input id="filter" type="text" placeholder="Filtra per nome/MMSI/tag…" style="flex:1; padding:8px 10px; border-radius:10px; border:1px solid #22305f; background:#0f1530; color:#dfe9ff" />
+          <span class="hint">clic marca per centrare</span>
+        </div>
+        <table id="grid" aria-label="Elenco navi">
+          <thead>
+            <tr>
+              <th style="width:36px">#</th>
+              <th>Nome</th>
+              <th>MMSI</th>
+              <th>Lat</th>
+              <th>Lon</th>
+              <th>SOG</th>
+              <th>COG</th>
+              <th>Tags</th>
+            </tr>
+          </thead>
+          <tbody id="grid-body"></tbody>
+        </table>
+      </div>
+    </aside>
+  </main>
+
+  <script>
+    // ---------- Config ----------
+    const DEFAULT_WS = "wss://ais-proxy.zonkeynet.workers.dev/api/vessels"; // cambia se serve
+    const urlParams  = new URLSearchParams(location.search);
+    const qsWS       = urlParams.get('ws');
+    const qsStatic   = urlParams.get('static') === '1';
+    const wsInput    = document.getElementById('ws-url');
+    const staticChk  = document.getElementById('static-toggle');
+    wsInput.value    = qsWS || DEFAULT_WS;
+    staticChk.checked= qsStatic;
+
+    // ---------- Mappa ----------
+    let map, markers = new Map();
+    function initMap() {
+      map = L.map('map', { zoomControl: true, preferCanvas: true }).setView([32.0, 20.0], 3);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 10,
+        attribution: '&copy; OpenStreetMap'
+      }).addTo(map);
+    }
+    function colorFor(v) {
+      if (v.military && v.arms) return '#ff6b6b';          // rosso: militare/armi
+      if (v.is_israel_related) return '#56ccf2';           // azzurro: israel_related
+      if ((v.tags||[]).includes('sanctioned_ofac') || (v.tags||[]).includes('sanctioned_sdgt')) return '#ffa94d'; // arancione: sanzionate
+      if ((v.tags||[]).includes('documented_by_UN')) return '#7ad3a3'; // verde: OHCHR
+      return '#b9c2e6';                                    // default
+    }
+    function upsertMarker(v) {
+      const key = v.mmsi || v.id;
+      if (!key) return;
+      let m = markers.get(key);
+      const opts = {
+        radius: 6,
+        stroke: true,
+        weight: 2,
+        opacity: 1,
+        fillOpacity: 0.8,
+        color: '#0b1020',
+        fillColor: colorFor(v)
+      };
+      if (!m) {
+        m = L.circleMarker([v.lat, v.lon], opts).addTo(map);
+        m.on('click', () => centerOnVessel(v.mmsi));
+        markers.set(key, m);
+      } else {
+        m.setLatLng([v.lat, v.lon]);
+        m.setStyle(opts);
+      }
+      const badge = [
+        v.military ? '<span class="chip mil">military</span>' : '',
+        v.arms     ? '<span class="chip arm">arms</span>'     : '',
+        v.is_israel_related ? '<span class="chip isr">israel_related</span>' : '',
+        (v.tags||[]).includes('sanctioned_ofac')|| (v.tags||[]).includes('sanctioned_sdgt') ? '<span class="chip san">sanctioned</span>':'',
+        (v.tags||[]).includes('documented_by_UN') ? '<span class="chip un">OHCHR</span>' : ''
+      ].filter(Boolean).join(' ');
+      m.bindPopup(`
+        <div><b>${escapeHtml(v.name || '')}</b></div>
+        <div class="hint">${v.mmsi}</div>
+        <div style="margin-top:6px">${badge || '<span class="chip">tracked</span>'}</div>
+        <hr style="border-color:#22305f" />
+        <div>Lat: ${fmtNum(v.lat)} | Lon: ${fmtNum(v.lon)}</div>
+        <div>SOG: ${fmtNum(v.sog)} kn | COG: ${fmtNum(v.cog)}°</div>
+        <div class="hint">Dest: ${escapeHtml(v.destination || '—')} | Nav: ${escapeHtml(String(v.status || '—'))}</div>
+      `);
+    }
+    function centerOnVessel(mmsi) {
+      const v = vessels.get(mmsi);
+      const m = markers.get(mmsi);
+      if (v && m) {
+        map.flyTo([v.lat, v.lon], Math.max(map.getZoom(), 6), { duration: 0.6 });
+        m.openPopup();
+      }
+    }
+
+    // ---------- Stato / UI ----------
+    const stateDot     = document.getElementById('state-dot');
+    const stateLabel   = document.getElementById('state-label');
+    const statMsg      = document.getElementById('stat-messages');
+    const statVessels  = document.getElementById('stat-vessels');
+    const statLast     = document.getElementById('stat-last');
+    const statErrors   = document.getElementById('stat-errors');
+    const logEl        = document.getElementById('log');
+    const gridBody     = document.getElementById('grid-body');
+    const filterInput  = document.getElementById('filter');
+
+    let ws = null;
+    let connected = false;
+    let messages = 0, errors = 0;
+    let reconnectDelay = 1500; // cresce fino a 15s
+    let reconnectTimer = null;
+
+    const vessels = new Map(); // mmsi -> data
+
+    function setState(ok, warn=false) {
+      stateDot.className = 'state-dot ' + (ok ? (warn ? 'warn' : 'online') : 'offline');
+      stateLabel.textContent = ok ? (warn ? 'online (warning)' : 'online') : 'offline';
+    }
+    function logLine(obj) {
+      const ts = new Date().toLocaleTimeString();
+      const line = typeof obj === 'string' ? obj : JSON.stringify(obj);
+      logEl.textContent += `[${ts}] ${line}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    function fmtNum(n) {
+      if (n === null || n === undefined || Number.isNaN(n)) return '—';
+      const f = Number(n);
+      return Number.isFinite(f) ? f.toFixed(4) : String(n);
+    }
+    function escapeHtml(s) {
+      return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    }
+
+    function updateStats() {
+      statMsg.textContent = String(messages);
+      statVessels.textContent = String(vessels.size);
+      statLast.textContent = new Date().toLocaleTimeString();
+      statErrors.textContent = String(errors);
+    }
+
+    function renderTable() {
+      const q = (filterInput.value || '').toLowerCase();
+      const rows = [];
+      let idx = 0;
+      for (const v of vessels.values()) {
+        const txt = `${v.name} ${v.mmsi} ${(v.tags||[]).join(' ')}`.toLowerCase();
+        if (q && !txt.includes(q)) continue;
+
+        const badges = [];
+        if (v.military) badges.push('<span class="chip mil">military</span>');
+        if (v.arms) badges.push('<span class="chip arm">arms</span>');
+        if (v.is_israel_related) badges.push('<span class="chip isr">israel_related</span>');
+        if ((v.tags||[]).includes('sanctioned_ofac') || (v.tags||[]).includes('sanctioned_sdgt')) badges.push('<span class="chip san">sanctioned</span>');
+        if ((v.tags||[]).includes('documented_by_UN')) badges.push('<span class="chip un">OHCHR</span>');
+        const tagStr = badges.join(' ') || '<span class="chip">tracked</span>';
+
+        rows.push(`
+          <tr data-mmsi="${v.mmsi}">
+            <td>${++idx}</td>
+            <td style="max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="${escapeHtml(v.name)}">${escapeHtml(v.name)}</td>
+            <td>${v.mmsi}</td>
+            <td>${fmtNum(v.lat)}</td>
+            <td>${fmtNum(v.lon)}</td>
+            <td>${fmtNum(v.sog)}</td>
+            <td>${fmtNum(v.cog)}</td>
+            <td>${tagStr}</td>
+          </tr>
+        `);
+      }
+      gridBody.innerHTML = rows.join('');
+      // click per centrare
+      for (const tr of gridBody.querySelectorAll('tr')) {
+        tr.addEventListener('click', () => centerOnVessel(tr.getAttribute('data-mmsi')));
+      }
+    }
+    let tableDirty = false;
+    function scheduleRender() {
+      if (tableDirty) return;
+      tableDirty = true;
+      requestAnimationFrame(() => {
+        renderTable();
+        tableDirty = false;
+      });
+    }
+
+    // ---------- WebSocket ----------
+    function connect() {
+      const base = wsInput.value.trim();
+      if (!base) return;
+      let url = base;
+      if (staticChk.checked && !url.includes('static=1')) {
+        url += (url.includes('?') ? '&' : '?') + 'static=1';
+      }
+      try {
+        ws = new WebSocket(url);
+      } catch (e) {
+        errors++; updateStats();
+        logLine({ error: 'ws_open_failed', detail: String(e) });
+        scheduleReconnect();
+        return;
+      }
+      ws.onopen = () => {
+        connected = true;
+        setState(true);
+        reconnectDelay = 1500;
+        logLine({ info: 'socket_open' });
+      };
+      ws.onmessage = (ev) => {
+        messages++;
+        updateStats();
+
+        try {
+          const m = JSON.parse(ev.data);
+          if (m.ka) return; // keepalive
+          if (m.info) { logLine({ info: m.info, ...(m.shard != null ? { shard:m.shard } : {}) }); return; }
+          if (m.error) { errors++; updateStats(); logLine({ error: m.error, detail: m.detail, shard: m.shard }); return; }
+          if (m.static_only) { logLine({ static_only: true, mmsi: m.mmsi, name: m.name }); return; }
+
+          if (typeof m.lat !== 'number' || typeof m.lon !== 'number') return; // disegna solo se ha posizione
+
+          vessels.set(m.mmsi, m);
+          upsertMarker(m);
+          scheduleRender();
+        } catch (e) {
+          errors++; updateStats();
+          logLine({ error: 'parse_error', detail: String(e) });
+        }
+      };
+      ws.onerror = (ev) => {
+        errors++; updateStats();
+        setState(true, true);
+        logLine('socket_error');
+      };
+      ws.onclose = () => {
+        connected = false;
+        setState(false);
+        logLine('socket_closed');
+        scheduleReconnect();
+      };
+    }
+    function disconnect() {
+      if (ws) {
+        try { ws.close(1000, 'manual_close'); } catch {}
+        ws = null;
+      }
+      connected = false;
+      setState(false);
+      if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+    }
+    function scheduleReconnect() {
+      if (reconnectTimer) return;
+      reconnectDelay = Math.min(reconnectDelay * 1.7, 15000);
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        if (!connected) connect();
+      }, reconnectDelay);
+    }
+
+    // ---------- Events ----------
+    document.getElementById('connect-btn').addEventListener('click', () => {
+      disconnect();
+      connect();
+    });
+    document.getElementById('disconnect-btn').addEventListener('click', () => {
+      disconnect();
+    });
+    filterInput.addEventListener('input', renderTable);
+
+    // ---------- Boot ----------
+    window.addEventListener('load', () => {
+      initMap();
+      // Autoconnect
+      connect();
+    });
+    // Facoltativo: riconnetti se cambia toggle "static"
+    staticChk.addEventListener('change', () => {
+      if (connected) { disconnect(); connect(); }
+    });
+  </script>
+</body>
+</html>
