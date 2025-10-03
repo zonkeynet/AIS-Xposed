@@ -127,10 +127,10 @@
         const map = L.map('map').setView([38.0, 15.0], 5);
         const vesselDataMap = new Map();
         const markerLayer = new L.LayerGroup().addTo(map);
-        // Utilizza una logica più robusta per determinare l'URL del WebSocket:
-        // Usa `window.location.host` per supportare Cloudflare (WSS) o localhost (WS)
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const WORKER_URL = `${protocol}//${window.location.host}/api/vessels`;
+        
+        // MODIFICA RICHIESTA: Punta direttamente all'endpoint pubblico del tuo Cloudflare Worker
+        const WORKER_URL = `wss://ais-proxy.zonkeynet.workers.dev/api/vessels`;
+        
         let ws;
         let reconnectTimeout;
 
@@ -318,7 +318,7 @@
                 // 1. MESSAGGI DI SISTEMA (info, error, keep-alive)
                 if (message.error || message.info || message.ka) {
                     if (message.error) {
-                        // Errore dal server (es. limiti API superati, come nei log)
+                        // Errore dal server (es. limiti API superati)
                         setStatus("SERVER ERROR: " + message.error, "error");
                         systemMessageEl.textContent = message.detail || "API server error.";
                     } else if (message.info) {
@@ -390,6 +390,7 @@
             }
             if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
             
+            // Si connette utilizzando WSS per l'endpoint HTTPS del Worker
             setStatus("CONNESSO AL PROXY. Richiesta Stream...", "connecting");
             ws = new WebSocket(WORKER_URL);
             
