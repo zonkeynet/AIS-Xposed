@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
   <title>AIS Xposed</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap');
     body{font-family:'Roboto Mono',monospace;color:#e5e7eb}
     #map{height:100vh;width:100%}
     .vessel-card{cursor:pointer;transition:all .2s;background:#111827;border:1px solid #374151}
@@ -15,16 +15,21 @@
     .leaflet-popup-content-wrapper{border-radius:8px;background:#1f2937;color:#e5e7eb}
     .leaflet-popup-content{margin:14px;font-size:14px}
     .tag-badge{display:inline-block;margin:2px 6px 0 0;padding:2px 8px;border-radius:9999px;font-size:11px;border:1px solid rgba(255,255,255,.2);background:rgba(31,41,55,.9);color:#e5e7eb;white-space:nowrap}
-    .tag--mil{border-color:#ef4444;color:#fca5a5}
-    .tag--isr{border-color:#818cf8;color:#a5b4fc}
-    .tag--arms{border-color:#f59e0b;color:#fdba74}
     .tag--un{border-color:#60a5fa;color:#93c5fd}
     .tag--invest{border-color:#f59e0b;color:#fbbf24}
+    .tag--union{border-color:#34d399;color:#6ee7b7}
     .tag--deny{border-color:#f87171;color:#fca5a5}
+    .tag--energy{border-color:#a78bfa;color:#c4b5fd}
+    .tag--ammo{border-color:#fb923c;color:#fdba74}
+    .tag--settle{border-color:#4ade80;color:#86efac}
+    .tag--israel{border-color:#818cf8;color:#a5b4fc}
+    .tag--sanct{border-color:#f43f5e;color:#fda4af}
+    .tag--mil{border-color:#ef4444;color:#fca5a5}
   </style>
 </head>
 <body class="bg-gray-900 flex h-screen overflow-hidden text-gray-200">
 
+<!-- Mobile toggle -->
 <button id="openSidebarButton" class="md:hidden fixed top-4 left-4 z-40 p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700">
   <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/></svg>
 </button>
@@ -33,7 +38,7 @@
 <aside id="sidebar" class="w-full md:w-96 fixed inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 flex-shrink-0 bg-gray-800 shadow-2xl p-4 flex flex-col z-30 border-r border-gray-700">
   <header class="pb-2 border-b border-gray-700 flex justify-between items-start">
     <div>
-      <h1 class="text-2xl font-bold text-indigo-400">AIS Xposed <span class="text-sm text-red-500">LIVE</span></h1>
+      <h1 class="text-2xl font-bold text-indigo-400">AIS Xposed <span class="text-sm text-red-500">_LIVE_</span></h1>
       <p id="connectionStatus" class="text-sm font-medium mt-2 p-2 rounded-lg text-yellow-300 bg-yellow-900 border border-yellow-500">
         Connessione al server in corso...
       </p>
@@ -44,23 +49,23 @@
   </header>
 
   <div class="mt-4 p-4 bg-gray-900 rounded-xl border border-gray-700">
-    <h2 class="text-lg font-semibold text-gray-200 mb-3">Filtri</h2>
+    <h2 class="text-lg font-semibold text-gray-200 mb-3">Filtri / Payload</h2>
     <div class="space-y-3 text-sm">
       <label class="flex items-center text-indigo-400">
         <input type="checkbox" id="filterIsrael" onchange="applyFilters()" class="h-5 w-5" checked>
-        <span class="ml-3">Affiliate a Israele</span>
+        <span class="ml-3">Affiliate a Israele (INDIGO)</span>
       </label>
       <label class="flex items-center text-red-400">
         <input type="checkbox" id="filterMilitary" onchange="applyFilters()" class="h-5 w-5" checked>
-        <span class="ml-3">Militari / Logistica</span>
+        <span class="ml-3">Militari / Logistica (RED)</span>
       </label>
       <label class="flex items-center text-amber-400">
         <input type="checkbox" id="filterArms" onchange="applyFilters()" class="h-5 w-5" checked>
-        <span class="ml-3">Trasporto Armi</span>
+        <span class="ml-3">Potenziale Trasporto Armi (AMBER)</span>
       </label>
     </div>
     <div class="mt-5">
-      <label for="destinationPort" class="block text-sm font-medium text-gray-400 mb-1">Destinazione contiene:</label>
+      <label for="destinationPort" class="block text-sm font-medium text-gray-400 mb-1">Target Destination:</label>
       <input type="text" id="destinationPort" oninput="applyFilters()" placeholder="ES: LIVORNO, HAIFA..." class="w-full p-2 border border-gray-600 bg-gray-700 text-gray-200 rounded-lg text-sm">
     </div>
   </div>
@@ -77,8 +82,8 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // Sostituisci YOURNAME con il tuo account Workers
-  const WORKER_URL = 'wss://ais-xposed.zonkeynet.workers.dev/api/vessels?debug=1';
+  // CAMBIA QUI con il tuo Worker (aggiungo debug=1 per diagnostica)
+  const WORKER_URL = 'wss:///ais-xposed.zonkeynet.workers.dev/api/vessels?debug=1';
 
   const map = L.map('map').setView([38.0, 15.0], 5);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
@@ -89,47 +94,60 @@
   const markerLayer = new L.LayerGroup().addTo(map);
   let ws;
 
-  const COLOR = { military:'#f87171', arms:'#fbbf24', israel:'#6366f1', def:'#22c55e' };
-
+  const COLOR_MAP = { military:'#f87171', arms:'#fbbf24', israel:'#6366f1', default:'#4ade80' };
   const sidebar = document.getElementById('sidebar');
   const overlay = document.getElementById('sidebarOverlay');
-  document.getElementById('openSidebarButton').onclick = ()=>toggleSidebar(true);
-  document.getElementById('closeSidebarButton').onclick = ()=>toggleSidebar(false);
-  overlay.onclick = ()=>toggleSidebar(false);
+  const openBtn = document.getElementById('openSidebarButton');
+  const closeBtn = document.getElementById('closeSidebarButton');
+
   function toggleSidebar(open){
     if (window.innerWidth>=768) return;
     if (open){ sidebar.classList.remove('-translate-x-full'); overlay.classList.add('opacity-50','pointer-events-auto'); }
     else { sidebar.classList.add('-translate-x-full'); overlay.classList.remove('opacity-50','pointer-events-auto'); }
   }
+  openBtn.addEventListener('click', ()=>toggleSidebar(true));
+  closeBtn.addEventListener('click', ()=>toggleSidebar(false));
+  overlay.addEventListener('click', ()=>toggleSidebar(false));
 
   function tagClass(tag){
-    const t=(tag||'').toLowerCase();
-    if (t.includes('mil')) return 'tag-badge tag--mil';
-    if (t.includes('israel')) return 'tag-badge tag--isr';
-    if (t.includes('arms')||t.includes('ammo')) return 'tag-badge tag--arms';
+    const t = (tag||'').toLowerCase();
     if (t.includes('ohchr')||t.includes('un')) return 'tag-badge tag--un';
     if (t.includes('invest')) return 'tag-badge tag--invest';
+    if (t.includes('union')||t.includes('blocked')) return 'tag-badge tag--union';
     if (t.includes('denial')) return 'tag-badge tag--deny';
+    if (t.includes('energy')||t.includes('lng')||t.includes('coal')) return 'tag-badge tag--energy';
+    if (t.includes('ammo')) return 'tag-badge tag--ammo';
+    if (t.includes('settlement')) return 'tag-badge tag--settle';
+    if (t.includes('israel')) return 'tag-badge tag--israel';
+    if (t.includes('sanct')) return 'tag-badge tag--sanct';
+    if (t.includes('military')) return 'tag-badge tag--mil';
     return 'tag-badge';
   }
 
-  function iconFor(v){
-    let c = COLOR.def;
-    if (v.military) c = COLOR.military;
-    else if (v.arms) c = COLOR.arms;
-    else if (v.is_israel_related) c = COLOR.israel;
+  function getMarkerIcon(v){
+    let color = COLOR_MAP.default;
+    if (v.military) color=COLOR_MAP.military;
+    else if (v.arms) color=COLOR_MAP.arms;
+    else if (v.is_israel_related) color=COLOR_MAP.israel;
     const svg = `<svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${v.cog||0}deg);">
-      <path d="M14 2L7 26H21L14 2Z" fill="${c}" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
+      <path d="M14 2L7 26H21L14 2Z" fill="${color}" stroke="white" stroke-width="1.5" stroke-linejoin="round"/></svg>`;
     return L.divIcon({ className:'custom-marker', html:svg, iconSize:[28,28], iconAnchor:[14,14], popupAnchor:[0,-14] });
   }
 
-  function popupHTML(v){
+  function createPopupContent(v){
     const cats = [
       v.military && '<span class="font-bold text-red-400">::MILITARY::</span>',
       v.arms && '<span class="font-bold text-amber-400">::ARMS_TRANSPORT::</span>',
       v.is_israel_related && '<span class="font-bold text-indigo-400">::ISRAEL_AFFILIATE::</span>'
     ].filter(Boolean).join('<br>');
-    const tags = (Array.isArray(v.tags)? v.tags : []).map(t=>`<span class="${tagClass(t)}">${t}</span>`).join('');
+
+    const tags = Array.isArray(v.tags)? v.tags : [];
+    const tagsHTML = tags.length? `
+      <div class="mt-2 text-xs">
+        <span class="font-bold text-gray-400">Fonti / motivazioni:</span>
+        <div class="mt-1">${tags.map(t=>`<span class="${tagClass(t)}">${t}</span>`).join('')}</div>
+      </div>` : '';
+
     return `
       <strong class="text-lg text-white">${v.name}</strong><br>
       <hr class="my-1 border-gray-600">
@@ -138,108 +156,137 @@
       <span class="text-gray-400">Stato:</span> ${v.status || 'N/A'}<br>
       <span class="text-gray-400">Velocità:</span> ${v.sog ? v.sog+' kn' : 'N/A'}<br>
       ${cats? cats+'<br>':''}
-      ${tags? `<div class="mt-2 text-xs"><span class="font-bold text-gray-400">Fonti/Tags:</span><div class="mt-1">${tags}</div></div>`:''}
+      ${tagsHTML}
     `;
   }
 
-  function renderMarkers(list){
-    const onMap = new Set();
+  function renderMapMarkers(list){
+    const displayed = new Set();
     list.forEach(v=>{
-      onMap.add(v.mmsi);
-      const ic = iconFor(v);
+      displayed.add(v.mmsi);
+      const icon = getMarkerIcon(v);
       if (v.marker){
-        v.marker.setLatLng([v.lat, v.lon]).setIcon(ic);
+        v.marker.setLatLng([v.lat, v.lon]).setIcon(icon);
       } else {
-        v.marker = L.marker([v.lat, v.lon], {icon: ic}).addTo(markerLayer);
-        v.marker.bindPopup(()=>popupHTML(v));
+        v.marker = L.marker([v.lat, v.lon], {icon}).addTo(markerLayer);
+        v.marker.bindPopup(()=>createPopupContent(v));
       }
     });
-    // cleanup
+    // cleanup marker non più presenti
     [...vesselDataMap.values()].forEach(v=>{
-      if (v.marker && !onMap.has(v.mmsi)){ markerLayer.removeLayer(v.marker); v.marker=null; }
+      if (v.marker && !displayed.has(v.mmsi)){
+        markerLayer.removeLayer(v.marker);
+        v.marker=null;
+      }
     });
   }
 
-  function renderList(list){
-    const box = document.getElementById('vesselList');
-    const cnt = document.getElementById('vesselCount');
-    const ph = document.getElementById('vesselListPlaceholder');
-    box.innerHTML=''; cnt.textContent=list.length; ph.style.display = list.length? 'none':'block';
+  function renderVesselList(list){
+    const listContainer = document.getElementById('vesselList');
+    const countElement = document.getElementById('vesselCount');
+    const placeholderEl = document.getElementById('vesselListPlaceholder');
+    listContainer.innerHTML=''; countElement.textContent=list.length;
+    if (placeholderEl) placeholderEl.style.display = list.length>0? 'none':'block';
 
     list.forEach(v=>{
-      const div = document.createElement('div');
-      div.className="vessel-card p-3 rounded-lg border";
-      const badge = v.military? 'MIL' : v.arms? 'ARMS' : v.is_israel_related? 'ISR' : 'STD';
-      div.innerHTML = `
+      let badgeClass, badgeText;
+      if (v.military){ badgeClass='bg-red-900 text-red-300 border-red-500'; badgeText='MIL_FORCE'; }
+      else if (v.arms){ badgeClass='bg-amber-900 text-amber-300 border-amber-500'; badgeText='ARMS_LOADED'; }
+      else if (v.is_israel_related){ badgeClass='bg-indigo-900 text-indigo-300 border-indigo-500'; badgeText='ZIM_AFFILIATE'; }
+      else { badgeClass='bg-green-900 text-green-300 border-green-500'; badgeText='STANDARD'; }
+
+      const tags = Array.isArray(v.tags)? v.tags : [];
+      const smallTags = tags.slice(0,3).map(t=>`<span class="${tagClass(t)}">${t}</span>`).join('');
+
+      const card = document.createElement('div');
+      card.className="vessel-card p-3 rounded-lg border";
+      card.innerHTML = `
         <div class="flex justify-between items-center">
           <p class="text-base font-semibold text-gray-50 truncate">${v.name}</p>
-          <span class="text-xs font-bold px-2 py-1 rounded-full border ${v.military?'bg-red-900 text-red-300 border-red-500':v.arms?'bg-amber-900 text-amber-300 border-amber-500':v.is_israel_related?'bg-indigo-900 text-indigo-300 border-indigo-500':'bg-green-900 text-green-300 border-green-500'}">${badge}</span>
+          <span class="text-xs font-bold px-2 py-1 rounded-full border ${badgeClass}">${badgeText}</span>
         </div>
         <p class="text-sm text-gray-400 truncate">MMSI: ${v.mmsi}</p>
         <p class="text-sm text-gray-400 truncate">Dest: ${v.destination || 'N/A'}</p>
+        ${tags.length? `<div class="mt-2">${smallTags}</div>`:''}
       `;
-      div.onclick = ()=>{
-        if (v.marker && v.lat && v.lon){ map.setView([v.lat, v.lon], 10); v.marker.openPopup(); toggleSidebar(false); }
+      card.onclick=()=>{
+        if (v.marker && v.lat && v.lon){
+          map.setView([v.lat, v.lon], 10);
+          v.marker.openPopup();
+          toggleSidebar(false);
+        }
       };
-      box.appendChild(div);
+      listContainer.appendChild(card);
     });
   }
 
-  function handleMessage(msg){
-    if (msg.info){ setStatus('INFO: '+msg.info, 'ok'); return; }
-    if (msg.error){ setStatus(`ERROR: ${msg.error}${msg.detail? ' — '+msg.detail:''}`, 'error'); return; }
-    if (msg.static_only){ setStatus('DEBUG: ShipStaticData ricevuto – flusso OK (no posizione)', 'ok'); return; }
-    if (msg.lat==null || msg.lon==null) return;
+  function handleIncomingVesselMessage(update){
+    if (!update.id) return;
 
-    const prev = vesselDataMap.get(msg.id);
-    vesselDataMap.set(msg.id, {...prev, ...msg, marker: prev?.marker});
+    // diagnostica: messaggi info/error
+    if (update.info) { setStatus(`INFO: ${update.info}`, 'ok'); return; }
+    if (update.error) { setStatus(`ERROR: ${update.error}${update.detail? ' — '+update.detail:''}`, 'error'); return; }
+
+    // "static_only" (debug) → non ha posizione, utile solo per verificare flusso
+    if (update.static_only) { 
+      setStatus('DEBUG: ricevuto ShipStaticData (no position) — flusso OK', 'ok');
+      return;
+    }
+
+    if (update.lat==null || update.lon==null) return;
+
+    const existing = vesselDataMap.get(update.id);
+    vesselDataMap.set(update.id, {...existing, ...update, marker:existing?.marker});
     applyFilters();
   }
 
   function applyFilters(){
-    const f = {
-      mil:  document.getElementById('filterMilitary').checked,
+    const filters = {
+      military: document.getElementById('filterMilitary').checked,
       arms: document.getElementById('filterArms').checked,
-      isr:  document.getElementById('filterIsrael').checked,
-      dst:  (document.getElementById('destinationPort').value||'').toLowerCase().trim()
+      israel: document.getElementById('filterIsrael').checked,
+      destination: (document.getElementById('destinationPort').value||'').toLowerCase().trim()
     };
-    const allOff = !f.mil && !f.arms && !f.isr;
+    const allOff = !filters.military && !filters.arms && !filters.israel;
     const arr = Array.from(vesselDataMap.values());
-    const out = arr.filter(v=>{
+    const filtered = arr.filter(v=>{
       if (v.lat==null || v.lon==null) return false;
-      const cat = allOff || (f.mil && v.military) || (f.arms && v.arms) || (f.isr && v.is_israel_related);
-      const dst = !f.dst || ((v.destination||'').toLowerCase().includes(f.dst));
+      const cat = allOff ||
+        (filters.military && v.military) ||
+        (filters.arms && v.arms) ||
+        (filters.israel && v.is_israel_related);
+      const dst = !filters.destination || ((v.destination||'').toLowerCase().includes(filters.destination));
       return cat && dst;
-    }).sort((a,b)=>(a.name||'').localeCompare(b.name||''));
-    renderMarkers(out);
-    renderList(out);
+    }).sort((a,b)=>(a.name||'z').localeCompare(b.name||'z'));
+    renderMapMarkers(filtered);
+    renderVesselList(filtered);
   }
 
-  function setStatus(t, type){
-    const el = document.getElementById('connectionStatus');
-    el.textContent = t;
-    el.className = 'text-sm font-medium mt-2 p-2 rounded-lg border ';
+  function setStatus(message,type){
+    const el=document.getElementById('connectionStatus');
+    el.textContent=message;
+    el.className='text-sm font-medium mt-2 p-2 rounded-lg border ';
     if (type==='ok') el.classList.add('text-green-300','bg-green-900','border-green-500');
     else if (type==='error') el.classList.add('text-red-300','bg-red-900','border-red-500');
     else el.classList.add('text-yellow-300','bg-yellow-900','border-yellow-500');
   }
 
-  // Connessione WS con retry esponenziale lato client (comunque il Worker ora NON chiude)
-  let retry = 2000;
-  function connect(){
-    try{
+  // Connessione WS con auto-retry
+  let retryMs = 2000;
+  function connectWebSocket(){
+    try {
       if (ws && (ws.readyState===WebSocket.OPEN || ws.readyState===WebSocket.CONNECTING)) return;
       ws = new WebSocket(WORKER_URL);
-      ws.onopen = ()=>{ setStatus('STREAM ONLINE / DATA FLOW ACTIVE','ok'); retry=2000; };
-      ws.onmessage = (ev)=>{ try{ handleMessage(JSON.parse(ev.data)); }catch(e){ console.error(e); } };
-      ws.onclose = ()=>{ setStatus('BROWSER WS CHIUSO: RICONNESSIONE...', 'error'); setTimeout(connect, Math.min(retry,15000)); retry*=2; };
-      ws.onerror = ()=>{ setStatus('ERRORE WS BROWSER: RETRY...', 'error'); try{ ws.close(); }catch{} };
-    }catch(e){
-      setStatus('WS INIT ERROR — '+String(e),'error');
-      setTimeout(connect, Math.min(retry,15000)); retry*=2;
+      ws.onopen = ()=>{ setStatus('STREAM ONLINE / DATA FLOW ACTIVE','ok'); retryMs=2000; };
+      ws.onmessage = (ev)=>{ try{ handleIncomingVesselMessage(JSON.parse(ev.data)); }catch(e){ console.error(e);} };
+      ws.onclose = ()=>{ setStatus('CONNECTION CLOSED. RETRYING...', 'error'); setTimeout(connectWebSocket, Math.min(retryMs, 15000)); retryMs *= 2; };
+      ws.onerror = ()=>{ setStatus('CONNECTION ERROR. RETRYING...', 'error'); try{ws.close();}catch{} };
+    } catch (e) {
+      setStatus('WS INIT ERROR — ' + String(e), 'error');
+      setTimeout(connectWebSocket, Math.min(retryMs, 15000)); retryMs *= 2;
     }
   }
-  connect();
+  connectWebSocket();
 </script>
 </body>
 </html>
