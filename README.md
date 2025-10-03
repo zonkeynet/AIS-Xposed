@@ -1,62 +1,61 @@
-# AIS Xposed
-🚢 AIS Xposed - Vessel Tracking Intelligence
-Una piattaforma di tracciamento in tempo reale che espone le posizioni delle navi mercantili e logistiche che sono state identificate e collegate a categorie specifiche (es. affiliazioni a gruppi, sanzioni, logistica militare) tramite fonti aperte e indagini documentate.
+# ⚓ AIS Live – Warships & Logistics Tracker  
 
-Utilizza AIS Stream per i dati in tempo reale e un Cloudflare Worker come proxy e come Durable Object per mantenere lo stato e applicare i tag investigativi.
+**Because freedom of the seas belongs to the people, not to states or corporations.**  
 
-⚙️ Architettura del Progetto
-Il progetto si compone di tre parti principali:
+This project is a hacker/activist experiment: a live AIS map that tracks **warships, arms logistics, sanctioned vessels, and Israel-related shipping**.  
+We refuse to look away while militaries, states and private companies use the oceans to wage wars, occupy territories and transport weapons.  
 
-AIS Stream (Upstream Data Source): Fornisce i dati AIS in tempo reale.
+---
 
-Worker/Proxy (Backend, aisxposed.js o worker.js):
+## ✊ Motivation
+- The ocean is not neutral – it’s a battlefield of power, empires and corporations.  
+- While governments hide their military supply chains, AIS signals expose them.  
+- We track these ships to **make visible what they want to keep invisible**.  
 
-Gestisce la singola connessione WebSocket persistente verso AIS Stream.
+This project is not about compliance with authorities.  
+It’s about **transparency, resistance, and solidarity** with the oppressed.  
 
-Mantiene una lista statica di navi da tracciare, arricchita con categorie e tag (la fonte di verità investigativa).
+---
 
-Filtra i dati AIS in arrivo, li arricchisce con i tag e ritrasmette solo i dati rilevanti ai client web connessi.
+## 🚢 What it does
+- Live AIS feed via [AISStream.io](https://aisstream.io)  
+- Focus on:
+  - **Israeli-related logistics** (ZIM, Marla, Carmel, etc.)  
+  - **US military & Bahri arms transport fleet**  
+  - **Sanctioned vessels** (OFAC / UN reports)  
+  - **Complicity ships** listed in UN/OHCHR reports  
+- Map UI with **tags, categories, diagnostics, search, filtering**  
 
-Frontend (Client Web, index.html):
+---
 
-Visualizza la mappa interattiva (Leaflet) e la lista delle navi.
+## 🏴 Hacker Ethics
+- **Knowledge is free.**  
+- **Tools are meant to be shared.**  
+- **Expose power, support freedom.**  
+- No state, no company, no war machine should hide in the dark.  
 
-Si connette al Worker tramite WebSocket per ricevere gli aggiornamenti in tempo reale.
+This repository is not just code – it’s a call to monitor, resist and act.  
 
-Permette di filtrare le navi per categoria e destinazione.
+---
 
-📋 Setup e Avvio (Per Sviluppatori)
-1. Ottenere la Chiave API
-Avrai bisogno di una chiave API gratuita da AIS Stream.
+## ⚙️ Tech
+- Frontend: GitHub Pages + LeafletJS  
+- Backend: Cloudflare Worker (WebSocket proxy to AISStream)  
+- Secrets: API keys managed in Cloudflare dashboard  
+- Written in JS/HTML/CSS (minimalist, DIY spirit)  
 
-2. Configurazione del Worker
-Modifica il file backend (es. aisxposed.js) e sostituisci la placeholder key:
+---
 
-JavaScript
+## 📢 Disclaimer
+This is an **activist tool**, not a commercial service.  
+Data comes from AIS feeds, which can be spoofed, jammed or manipulated.  
+We use it to **document, investigate and resist** – not to profit.  
 
-const API_KEY = 'la-tua-chiave-api-qui'; // <-- ESSENZIALE
-3. Data Set Navi
-La lista delle navi da tracciare, insieme ai loro tag e categorie, si trova all'inizio del file del Worker (VESSELS_TO_TRACK). Questa lista è l'output dell'indagine e non va modificata senza validazione della fonte.
+---
 
-4. Deploy del Worker
-Questo progetto è ottimizzato per Cloudflare Workers / Durable Objects.
+## 🏴‍☠️ Join us
+- Fork it. Modify it. Mirror it. Share it.  
+- Run your own trackers, add your own vessels of interest.  
+- Build a network of resistance against the naval war machine.  
 
-Installa wrangler (CLI di Cloudflare).
-
-Esegui il deploy utilizzando il tuo tool di gestione dei Worker (es. wrangler publish).
-
-Annota l'URL del tuo Worker, che sarà usato nel frontend (vedi WORKER_URL nel codice HTML).
-
-🔎 Funzionalità Principali (Frontend)
-Tracciamento Live: Aggiornamento della posizione delle navi in tempo reale.
-
-Filtri Categoria: Visualizza solo le navi classificate come Affiliati, Militari o Potenziale Trasporto Armi.
-
-Filtro Destinazione: Ricerca testuale sulla destinazione dichiarata (es. Haifa, Livorno).
-
-Schede Dettaglio: Ogni nave nella lista è cliccabile per zoomare sulla mappa e mostrare un popup dettagliato con i dati AIS e tutti i tag investigativi.
-
-Sistema di Tagging: I colori e i badge (es. tag--invest, tag--israel) sono mappati nel codice HTML/CSS (index.html) e riflettono le diverse fonti o motivazioni che hanno portato all'inclusione della nave.
-
-⚠️ Disclaimer Importante
-AIS Xposed è un progetto di intelligence open source. I dati AIS (posizione, rotta, destinazione) sono pubblici ma non garantiti. I tag applicati alle navi sono basati su analisi documentali e non costituiscono una prova legale o definitiva di una determinata attività. L'obiettivo è quello di fornire un livello di trasparenza e consapevolezza tracciando i movimenti marittimi di entità precedentemente identificate.
+**No gods, no masters – just freedom on the seas.**  
