@@ -6,7 +6,7 @@
     <title>AIS Xposed</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <style>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script> <style>
         /* Importazione di Roboto Mono per l'estetica hacker/terminale */
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap');
         
@@ -51,6 +51,7 @@
             color:#e5e7eb;
             white-space: nowrap;
         }
+        /* Classi Tailwind-friendly mappate */
         .tag--un { border-color:#60a5fa; color:#93c5fd; }
         .tag--invest { border-color:#f59e0b; color:#fbbf24; }
         .tag--union { border-color:#34d399; color:#6ee7b7; }
@@ -80,7 +81,7 @@
                 <p id="connectionStatus" class="text-sm font-medium mt-2 p-2 rounded-lg text-yellow-300 bg-gray-700 border border-yellow-500 transition-colors duration-300 badge-glow">
                     Connessione al server in corso...
                 </p>
-                <p id="systemMessage" class="text-xs mt-1 text-gray-400 h-4 overflow-hidden truncate">Pronto.</p>
+                <p id="systemMessage" class="text-xs mt-1 text-gray-400 h-4 overflow-hidden truncate">In attesa di dati dal Worker...</p>
             </div>
             <button id="closeSidebarButton" class="md:hidden p-1 text-gray-400 hover:text-gray-200">
                  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -121,14 +122,13 @@
 
     <main id="map" class="flex-grow"></main>
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
         // === VARIABILI GLOBALI E SETUP ===
         const map = L.map('map').setView([38.0, 15.0], 5);
         const vesselDataMap = new Map();
         const markerLayer = new L.LayerGroup().addTo(map);
         
-        // MODIFICA RICHIESTA: Punta direttamente all'endpoint pubblico del tuo Cloudflare Worker
+        // MODIFICA CHIAVE: Utilizza l'URL pubblico del tuo Worker (WSS necessario per HTTPS)
         const WORKER_URL = `wss://ais-proxy.zonkeynet.workers.dev/api/vessels`;
         
         let ws;
@@ -239,13 +239,26 @@
         function renderMapMarkers(filteredVessels) {
             const displayedMMSIs = new Set();
             filteredVessels.forEach(vessel => {
+                if (vessel.lat === null || vessel.lon === null) return;
+                
                 displayedMMSIs.add(vessel.mmsi);
                 const icon = getMarkerIcon(vessel);
+                
                 if (vessel.marker) {
                     vessel.marker.setLatLng([vessel.lat, vessel.lon]).setIcon(icon);
+                    // Aggiorna il popup content nel caso siano arrivati dati statici
+                    if (vessel.marker._popup) vessel.marker.setPopupContent(createPopupContent(vessel));
                 } else {
                     vessel.marker = L.marker([vessel.lat, vessel.lon], { icon: icon }).addTo(markerLayer);
                     vessel.marker.bindPopup(() => createPopupContent(vessel));
+                    vessel.marker.on('click', () => {
+                        document.getElementById(`card-${vessel.mmsi}`).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        // Effetto di evidenziazione temporanea
+                        const cardEl = document.getElementById(`card-${vessel.mmsi}`);
+                        cardEl.classList.add('shadow-indigo-500/80');
+                        setTimeout(() => cardEl.classList.remove('shadow-indigo-500/80'), 1500);
+                        toggleSidebar(false); 
+                    });
                 }
             });
 
@@ -260,11 +273,13 @@
         function renderVesselList(vessels) {
             const listContainer = document.getElementById('vesselList');
             const countElement = document.getElementById('vesselCount');
-            const placeholderEl = document.getElementById('vesselListPlaceholder'); 
+            
+            // Ordina per nome
+            vessels.sort((a, b) => (a.name || 'z').localeCompare(b.name || 'z'));
             
             listContainer.innerHTML = '';
             countElement.textContent = vessels.length;
-            if (placeholderEl) placeholderEl.style.display = vessels.length > 0 ? 'none' : 'block';
+            placeholder.style.display = vessels.length > 0 ? 'none' : 'block';
 
             vessels.forEach(vessel => {
                 let badgeClass, badgeText;
@@ -286,6 +301,7 @@
                 const smallTags = tags.slice(0, 3).map(t => `<span class="${tagClass(t)}">${t}</span>`).join('');
 
                 const card = document.createElement('div');
+                card.id = `card-${vessel.mmsi}`;
                 card.className = "vessel-card p-3 rounded-lg bg-gray-900 border border-gray-700 shadow-xl";
                 card.innerHTML = `
                     <div class="flex justify-between items-center">
@@ -308,34 +324,65 @@
         }
 
         /**
+         * Funzione di stato aggiornata per gestire i messaggi di controllo.
+         */
+        function setStatus(message, type) {
+            const el = document.getElementById('connectionStatus');
+            el.textContent = message;
+            el.className = 'text-sm font-medium mt-2 p-2 rounded-lg transition-colors duration-300 badge-glow ';
+            
+            // TailwinCSS classes for the status bar
+            if (type === 'ok') { 
+                el.classList.add('text-green-300', 'bg-green-900', 'border', 'border-green-500');
+            } else if (type === 'error') { 
+                el.classList.add('text-red-300', 'bg-red-900', 'border', 'border-red-500');
+            } else { 
+                el.classList.add('text-yellow-300', 'bg-yellow-900', 'border', 'border-yellow-500');
+            }
+        }
+
+        /**
          * Gestisce i messaggi in arrivo dal Durable Object.
-         * I messaggi possono essere dati AIS (con 'id') o messaggi di sistema (con 'info' o 'error').
+         * Implementa la logica data.control per lo stato verde/rosso.
          */
         function handleIncomingMessage(data) {
             try {
                 const message = JSON.parse(data);
 
-                // 1. MESSAGGI DI SISTEMA (info, error, keep-alive)
-                if (message.error || message.info || message.ka) {
-                    if (message.error) {
-                        // Errore dal server (es. limiti API superati)
-                        setStatus("SERVER ERROR: " + message.error, "error");
-                        systemMessageEl.textContent = message.detail || "API server error.";
-                    } else if (message.info) {
-                        // Messaggi informativi (es. upstream_open, rotazione)
-                        if (message.info.startsWith('Rotazione')) {
-                             systemMessageEl.textContent = message.info;
-                        } else {
-                            systemMessageEl.textContent = message.info.replace(/_/g, ' ').toUpperCase();
-                        }
+                // 1. MESSAGGI DI CONTROLLO (STATO UPSTREAM)
+                if (message.control) {
+                    const status = message.control.status;
+                    const msg = message.control.message;
+                    
+                    if (status === 'ONLINE') {
+                        setStatus("AIS STREAM ATTIVO", "ok");
+                        systemMessageEl.textContent = msg;
+                    } else if (status === 'OFFLINE' || status === 'ERROR') {
+                        setStatus("SERVER ERROR: Disconnesso", "error");
+                        systemMessageEl.textContent = msg; // Mostra il messaggio di errore/rotazione
+                    } else {
+                        setStatus("CONNESSIONE STABILITA. Richiesta Stream...", "connecting");
+                        systemMessageEl.textContent = msg || "In attesa di dati...";
                     }
-                    // Ignora i keep-alive (ka)
                     return;
                 }
 
-                // 2. DATI NAVE (Aggiornamento posizione/dati statici)
-                if (message.id && message.lat !== null && message.lon !== null) {
+                // 2. MESSAGGI DI LOG INFORMATIVI VECCHI (mantenuti per retrocompatibilità/debug)
+                if (message.info) {
+                     systemMessageEl.textContent = message.info.replace(/_/g, ' ').toUpperCase();
+                     return;
+                }
+                if (message.error) {
+                    // Se riceve un errore che non è nel nuovo formato 'control', lo gestisce come errore
+                    setStatus("SERVER ERROR: " + message.error, "error");
+                    systemMessageEl.textContent = message.detail || "API server error.";
+                    return;
+                }
+
+                // 3. DATI NAVE
+                if (message.id && (message.lat !== undefined && message.lon !== undefined)) {
                     const existing = vesselDataMap.get(message.id);
+                    // Aggiorna i dati della nave (mantenendo il riferimento al marker)
                     vesselDataMap.set(message.id, { ...existing, ...message, marker: existing?.marker });
                     applyFilters();
                 }
@@ -369,18 +416,8 @@
                 return matchesCategory && matchesDestination;
             });
 
-            filteredVessels.sort((a, b) => (a.name || 'z').localeCompare(b.name || 'z'));
             renderMapMarkers(filteredVessels);
             renderVesselList(filteredVessels);
-        }
-
-        function setStatus(message, type) {
-            const el = document.getElementById('connectionStatus');
-            el.textContent = message;
-            el.className = 'text-sm font-medium mt-2 p-2 rounded-lg transition-colors duration-300 badge-glow ';
-            if (type === 'ok') el.classList.add('text-green-300', 'bg-green-900', 'border', 'border-green-500');
-            else if (type === 'error') el.classList.add('text-red-300', 'bg-red-900', 'border', 'border-red-500');
-            else el.classList.add('text-yellow-300', 'bg-yellow-900', 'border', 'border-yellow-500');
         }
 
         function connectWebSocket() {
@@ -390,12 +427,11 @@
             }
             if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
             
-            // Si connette utilizzando WSS per l'endpoint HTTPS del Worker
             setStatus("CONNESSO AL PROXY. Richiesta Stream...", "connecting");
             ws = new WebSocket(WORKER_URL);
             
             ws.onopen = () => {
-                setStatus("STREAM ONLINE / DATA FLOW ACTIVE", "ok");
+                // Il primo messaggio di stato arriverà dal Worker con data.control.status="ONLINE"
                 systemMessageEl.textContent = "Connessione WebSocket stabilita con successo.";
             };
             
@@ -404,20 +440,16 @@
             ws.onclose = () => {
                 setStatus("CONNESSIONE CHIUSA. Tentativo di riconnessione in 5 sec...", "error");
                 systemMessageEl.textContent = "Connessione persa con il proxy/Durable Object.";
-                // Riconnessione con backoff fisso
                 reconnectTimeout = setTimeout(connectWebSocket, 5000);
             };
             
             ws.onerror = (err) => {
                 console.error("Errore WebSocket:", err);
-                setStatus("CONNECTION ERROR. RETRYING...", "error");
-                // La chiusura attiverà onclose e la riconnessione
-                ws.close(); 
+                // L'evento 'onclose' gestirà la logica di riconnessione
             };
         }
 
         connectWebSocket(); 
-        // Assicura che i filtri siano applicati all'avvio
         document.addEventListener('DOMContentLoaded', applyFilters);
     </script>
 </body>
