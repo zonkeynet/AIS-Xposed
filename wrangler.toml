@@ -1,0 +1,7 @@
+name = "ais-xposed"
+main = "worker.js"
+compatibility_date = "2023-12-01" # O una data successiva
+
+# Aggiungi questa linea per consentire le connessioni TCP/WebSocket in uscita
+# ad host esterni. Senza questa linea, fetch non può connettersi ad un endpoint ws/wss.
+compatibility_flags = ["sockets_in_workers"] 
