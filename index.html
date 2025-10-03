@@ -9,13 +9,11 @@
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap');
     body{font-family:'Roboto Mono',monospace;color:#e5e7eb}
-    .badge-glow{box-shadow:0 0 5px rgba(255,255,255,.5)}
-    #map{height:100vh;width:100%;z-index:0}
-    .vessel-card{cursor:pointer;transition:all .2s ease-in-out;background:#1f2937;border-color:#374151}
+    #map{height:100vh;width:100%}
+    .vessel-card{cursor:pointer;transition:all .2s;background:#111827;border:1px solid #374151}
     .vessel-card:hover{transform:translateY(-2px);box-shadow:0 0 15px rgba(79,70,229,.5);border-color:#4f46e5}
     .leaflet-popup-content-wrapper{border-radius:8px;background:#1f2937;color:#e5e7eb}
     .leaflet-popup-content{margin:14px;font-size:14px}
-    .custom-marker svg{transition:transform .5s linear}
     .tag-badge{display:inline-block;margin:2px 6px 0 0;padding:2px 8px;border-radius:9999px;font-size:11px;border:1px solid rgba(255,255,255,.2);background:rgba(31,41,55,.9);color:#e5e7eb;white-space:nowrap}
     .tag--un{border-color:#60a5fa;color:#93c5fd}
     .tag--invest{border-color:#f59e0b;color:#fbbf24}
@@ -31,7 +29,8 @@
 </head>
 <body class="bg-gray-900 flex h-screen overflow-hidden text-gray-200">
 
-<button id="openSidebarButton" class="md:hidden fixed top-4 left-4 z-40 p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition duration-300">
+<!-- Mobile toggle -->
+<button id="openSidebarButton" class="md:hidden fixed top-4 left-4 z-40 p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700">
   <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/></svg>
 </button>
 <div id="sidebarOverlay" class="fixed inset-0 bg-black opacity-0 md:opacity-0 pointer-events-none transition-opacity duration-300 z-20"></div>
@@ -40,7 +39,7 @@
   <header class="pb-2 border-b border-gray-700 flex justify-between items-start">
     <div>
       <h1 class="text-2xl font-bold text-indigo-400">AIS Xposed <span class="text-sm text-red-500">_LIVE_</span></h1>
-      <p id="connectionStatus" class="text-sm font-medium mt-2 p-2 rounded-lg text-yellow-300 bg-gray-700 border border-yellow-500 transition-colors duration-300 badge-glow">
+      <p id="connectionStatus" class="text-sm font-medium mt-2 p-2 rounded-lg text-yellow-300 bg-yellow-900 border border-yellow-500">
         Connessione al server in corso...
       </p>
     </div>
@@ -50,24 +49,24 @@
   </header>
 
   <div class="mt-4 p-4 bg-gray-900 rounded-xl border border-gray-700">
-    <h2 class="text-lg font-semibold text-gray-200 mb-3">Filtri / Payload Analysis</h2>
+    <h2 class="text-lg font-semibold text-gray-200 mb-3">Filtri / Payload</h2>
     <div class="space-y-3 text-sm">
       <label class="flex items-center text-indigo-400">
-        <input type="checkbox" id="filterIsrael" onchange="applyFilters()" class="form-checkbox h-5 w-5 text-indigo-500 rounded focus:ring-indigo-400 border-indigo-500 bg-gray-700" checked>
+        <input type="checkbox" id="filterIsrael" onchange="applyFilters()" class="h-5 w-5" checked>
         <span class="ml-3">Affiliate a Israele (INDIGO)</span>
       </label>
       <label class="flex items-center text-red-400">
-        <input type="checkbox" id="filterMilitary" onchange="applyFilters()" class="form-checkbox h-5 w-5 text-red-500 rounded focus:ring-red-400 border-red-500 bg-gray-700" checked>
+        <input type="checkbox" id="filterMilitary" onchange="applyFilters()" class="h-5 w-5" checked>
         <span class="ml-3">Militari / Logistica (RED)</span>
       </label>
       <label class="flex items-center text-amber-400">
-        <input type="checkbox" id="filterArms" onchange="applyFilters()" class="form-checkbox h-5 w-5 text-amber-500 rounded focus:ring-amber-400 border-amber-500 bg-gray-700" checked>
+        <input type="checkbox" id="filterArms" onchange="applyFilters()" class="h-5 w-5" checked>
         <span class="ml-3">Potenziale Trasporto Armi (AMBER)</span>
       </label>
     </div>
     <div class="mt-5">
       <label for="destinationPort" class="block text-sm font-medium text-gray-400 mb-1">Target Destination:</label>
-      <input type="text" id="destinationPort" oninput="applyFilters()" placeholder="ES: LIVORNO, HAIFA..." class="w-full p-2 border border-gray-600 bg-gray-700 text-gray-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm">
+      <input type="text" id="destinationPort" oninput="applyFilters()" placeholder="ES: LIVORNO, HAIFA..." class="w-full p-2 border border-gray-600 bg-gray-700 text-gray-200 rounded-lg text-sm">
     </div>
   </div>
 
@@ -83,10 +82,14 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-  // 👉 CAMBIA QUI con il tuo Worker
-  const WORKER_URL = 'wss://ais-xposed.zonkeynet.workers.dev/api/vessels';
+  // CAMBIA QUI con il tuo Worker (aggiungo debug=1 per diagnostica)
+  const WORKER_URL = 'wss://ais-xposed.YOURNAME.workers.dev/api/vessels?debug=1';
 
   const map = L.map('map').setView([38.0, 15.0], 5);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution:'&copy; OpenStreetMap & CARTO', subdomains:'abcd', maxZoom:20
+  }).addTo(map);
+
   const vesselDataMap = new Map();
   const markerLayer = new L.LayerGroup().addTo(map);
   let ws;
@@ -106,9 +109,20 @@
   closeBtn.addEventListener('click', ()=>toggleSidebar(false));
   overlay.addEventListener('click', ()=>toggleSidebar(false));
 
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution:'&copy; OpenStreetMap & CARTO', subdomains:'abcd', maxZoom:20
-  }).addTo(map);
+  function tagClass(tag){
+    const t = (tag||'').toLowerCase();
+    if (t.includes('ohchr')||t.includes('un')) return 'tag-badge tag--un';
+    if (t.includes('invest')) return 'tag-badge tag--invest';
+    if (t.includes('union')||t.includes('blocked')) return 'tag-badge tag--union';
+    if (t.includes('denial')) return 'tag-badge tag--deny';
+    if (t.includes('energy')||t.includes('lng')||t.includes('coal')) return 'tag-badge tag--energy';
+    if (t.includes('ammo')) return 'tag-badge tag--ammo';
+    if (t.includes('settlement')) return 'tag-badge tag--settle';
+    if (t.includes('israel')) return 'tag-badge tag--israel';
+    if (t.includes('sanct')) return 'tag-badge tag--sanct';
+    if (t.includes('military')) return 'tag-badge tag--mil';
+    return 'tag-badge';
+  }
 
   function getMarkerIcon(v){
     let color = COLOR_MAP.default;
@@ -120,26 +134,12 @@
     return L.divIcon({ className:'custom-marker', html:svg, iconSize:[28,28], iconAnchor:[14,14], popupAnchor:[0,-14] });
   }
 
-  function tagClass(tag){
-    const t = (tag||'').toLowerCase();
-    if (t.includes('ohchr')||t.includes('un')) return 'tag-badge tag--un';
-    if (t.includes('investigative')) return 'tag-badge tag--invest';
-    if (t.includes('union')||t.includes('blocked')) return 'tag-badge tag--union';
-    if (t.includes('denial')) return 'tag-badge tag--deny';
-    if (t.includes('energy')||t.includes('lng')||t.includes('coal')) return 'tag-badge tag--energy';
-    if (t.includes('ammo')) return 'tag-badge tag--ammo';
-    if (t.includes('settlement')) return 'tag-badge tag--settle';
-    if (t.includes('israel')) return 'tag-badge tag--israel';
-    if (t.includes('sanction')) return 'tag-badge tag--sanct';
-    if (t.includes('military')) return 'tag-badge tag--mil';
-    return 'tag-badge';
-  }
-
   function createPopupContent(v){
-    let categories='';
-    if (v.military) categories+='<span class="font-bold text-red-400">::MILITARY::</span><br>';
-    if (v.arms) categories+='<span class="font-bold text-amber-400">::ARMS_TRANSPORT::</span><br>';
-    if (v.is_israel_related) categories+='<span class="font-bold text-indigo-400">::ISRAEL_AFFILIATE::</span><br>';
+    const cats = [
+      v.military && '<span class="font-bold text-red-400">::MILITARY::</span>',
+      v.arms && '<span class="font-bold text-amber-400">::ARMS_TRANSPORT::</span>',
+      v.is_israel_related && '<span class="font-bold text-indigo-400">::ISRAEL_AFFILIATE::</span>'
+    ].filter(Boolean).join('<br>');
 
     const tags = Array.isArray(v.tags)? v.tags : [];
     const tagsHTML = tags.length? `
@@ -154,8 +154,9 @@
       <span class="text-gray-400">MMSI:</span> ${v.mmsi}<br>
       <span class="text-gray-400">Destinazione:</span> ${v.destination || 'N/A'}<br>
       <span class="text-gray-400">Stato:</span> ${v.status || 'N/A'}<br>
-      <span class="text-gray-400">Velocità:</span> ${v.sog ? v.sog+' nodi' : 'N/A'}<br>
-      ${categories}${tagsHTML}
+      <span class="text-gray-400">Velocità:</span> ${v.sog ? v.sog+' kn' : 'N/A'}<br>
+      ${cats? cats+'<br>':''}
+      ${tagsHTML}
     `;
   }
 
@@ -171,7 +172,7 @@
         v.marker.bindPopup(()=>createPopupContent(v));
       }
     });
-    // cleanup
+    // cleanup marker non più presenti
     [...vesselDataMap.values()].forEach(v=>{
       if (v.marker && !displayed.has(v.mmsi)){
         markerLayer.removeLayer(v.marker);
@@ -189,16 +190,16 @@
 
     list.forEach(v=>{
       let badgeClass, badgeText;
-      if (v.military){ badgeClass='bg-red-900 text-red-300 border-red-500 badge-glow'; badgeText='MIL_FORCE'; }
-      else if (v.arms){ badgeClass='bg-amber-900 text-amber-300 border-amber-500 badge-glow'; badgeText='ARMS_LOADED'; }
-      else if (v.is_israel_related){ badgeClass='bg-indigo-900 text-indigo-300 border-indigo-500 badge-glow'; badgeText='ZIM_AFFILIATE'; }
+      if (v.military){ badgeClass='bg-red-900 text-red-300 border-red-500'; badgeText='MIL_FORCE'; }
+      else if (v.arms){ badgeClass='bg-amber-900 text-amber-300 border-amber-500'; badgeText='ARMS_LOADED'; }
+      else if (v.is_israel_related){ badgeClass='bg-indigo-900 text-indigo-300 border-indigo-500'; badgeText='ZIM_AFFILIATE'; }
       else { badgeClass='bg-green-900 text-green-300 border-green-500'; badgeText='STANDARD'; }
 
       const tags = Array.isArray(v.tags)? v.tags : [];
       const smallTags = tags.slice(0,3).map(t=>`<span class="${tagClass(t)}">${t}</span>`).join('');
 
       const card = document.createElement('div');
-      card.className="vessel-card p-3 rounded-lg bg-gray-900 border border-gray-700 shadow-xl";
+      card.className="vessel-card p-3 rounded-lg border";
       card.innerHTML = `
         <div class="flex justify-between items-center">
           <p class="text-base font-semibold text-gray-50 truncate">${v.name}</p>
@@ -220,7 +221,20 @@
   }
 
   function handleIncomingVesselMessage(update){
-    if (!update.id || update.lat==null || update.lon==null) return;
+    if (!update.id) return;
+
+    // diagnostica: messaggi info/error
+    if (update.info) { setStatus(`INFO: ${update.info}`, 'ok'); return; }
+    if (update.error) { setStatus(`ERROR: ${update.error}${update.detail? ' — '+update.detail:''}`, 'error'); return; }
+
+    // "static_only" (debug) → non ha posizione, utile solo per verificare flusso
+    if (update.static_only) { 
+      setStatus('DEBUG: ricevuto ShipStaticData (no position) — flusso OK', 'ok');
+      return;
+    }
+
+    if (update.lat==null || update.lon==null) return;
+
     const existing = vesselDataMap.get(update.id);
     vesselDataMap.set(update.id, {...existing, ...update, marker:existing?.marker});
     applyFilters();
@@ -251,19 +265,26 @@
   function setStatus(message,type){
     const el=document.getElementById('connectionStatus');
     el.textContent=message;
-    el.className='text-sm font-medium mt-2 p-2 rounded-lg transition-colors duration-300 badge-glow ';
-    if (type==='ok') el.classList.add('text-green-300','bg-green-900','border','border-green-500');
-    else if (type==='error') el.classList.add('text-red-300','bg-red-900','border','border-red-500');
-    else el.classList.add('text-yellow-300','bg-yellow-900','border','border-yellow-500');
+    el.className='text-sm font-medium mt-2 p-2 rounded-lg border ';
+    if (type==='ok') el.classList.add('text-green-300','bg-green-900','border-green-500');
+    else if (type==='error') el.classList.add('text-red-300','bg-red-900','border-red-500');
+    else el.classList.add('text-yellow-300','bg-yellow-900','border-yellow-500');
   }
 
+  // Connessione WS con auto-retry
+  let retryMs = 2000;
   function connectWebSocket(){
-    if (ws && (ws.readyState===WebSocket.OPEN || ws.readyState===WebSocket.CONNECTING)) return;
-    ws = new WebSocket(WORKER_URL);
-    ws.onopen = ()=> setStatus('STREAM ONLINE / DATA FLOW ACTIVE','ok');
-    ws.onmessage = (ev)=>{ try{ handleIncomingVesselMessage(JSON.parse(ev.data)); }catch(e){ console.error(e);} };
-    ws.onclose = ()=>{ setStatus('CONNECTION CLOSED. RECONNECTING IN 5 SEC...','error'); setTimeout(connectWebSocket,5000); };
-    ws.onerror = ()=>{ setStatus('CONNECTION ERROR. RETRYING...','error'); try{ws.close();}catch{} };
+    try {
+      if (ws && (ws.readyState===WebSocket.OPEN || ws.readyState===WebSocket.CONNECTING)) return;
+      ws = new WebSocket(WORKER_URL);
+      ws.onopen = ()=>{ setStatus('STREAM ONLINE / DATA FLOW ACTIVE','ok'); retryMs=2000; };
+      ws.onmessage = (ev)=>{ try{ handleIncomingVesselMessage(JSON.parse(ev.data)); }catch(e){ console.error(e);} };
+      ws.onclose = ()=>{ setStatus('CONNECTION CLOSED. RETRYING...', 'error'); setTimeout(connectWebSocket, Math.min(retryMs, 15000)); retryMs *= 2; };
+      ws.onerror = ()=>{ setStatus('CONNECTION ERROR. RETRYING...', 'error'); try{ws.close();}catch{} };
+    } catch (e) {
+      setStatus('WS INIT ERROR — ' + String(e), 'error');
+      setTimeout(connectWebSocket, Math.min(retryMs, 15000)); retryMs *= 2;
+    }
   }
   connectWebSocket();
 </script>
