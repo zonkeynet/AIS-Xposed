@@ -6,7 +6,9 @@
     <title>AIS Xposed</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script> <style>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script> 
+    
+    <style>
         /* Importazione di Roboto Mono per l'estetica hacker/terminale */
         @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600;700&display=swap');
         
@@ -128,18 +130,17 @@
         const vesselDataMap = new Map();
         const markerLayer = new L.LayerGroup().addTo(map);
         
-        // MODIFICA CHIAVE: Utilizza l'URL pubblico del tuo Worker (WSS necessario per HTTPS)
+        // URL del tuo Worker/Durable Object
         const WORKER_URL = `wss://ais-proxy.zonkeynet.workers.dev/api/vessels`;
         
         let ws;
         let reconnectTimeout;
 
-        // Nuovi colori vibranti per il tema dark
         const COLOR_MAP = {
-            military: '#f87171', // red-400
-            arms: '#fbbf24',     // amber-400
-            israel: '#6366f1',   // indigo-500
-            default: '#4ade80'   // green-400
+            military: '#f87171', 
+            arms: '#fbbf24',    
+            israel: '#6366f1',  
+            default: '#4ade80'  
         };
         
         // ELEMENTI UI
@@ -246,14 +247,12 @@
                 
                 if (vessel.marker) {
                     vessel.marker.setLatLng([vessel.lat, vessel.lon]).setIcon(icon);
-                    // Aggiorna il popup content nel caso siano arrivati dati statici
                     if (vessel.marker._popup) vessel.marker.setPopupContent(createPopupContent(vessel));
                 } else {
                     vessel.marker = L.marker([vessel.lat, vessel.lon], { icon: icon }).addTo(markerLayer);
                     vessel.marker.bindPopup(() => createPopupContent(vessel));
                     vessel.marker.on('click', () => {
                         document.getElementById(`card-${vessel.mmsi}`).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        // Effetto di evidenziazione temporanea
                         const cardEl = document.getElementById(`card-${vessel.mmsi}`);
                         cardEl.classList.add('shadow-indigo-500/80');
                         setTimeout(() => cardEl.classList.remove('shadow-indigo-500/80'), 1500);
@@ -274,7 +273,6 @@
             const listContainer = document.getElementById('vesselList');
             const countElement = document.getElementById('vesselCount');
             
-            // Ordina per nome
             vessels.sort((a, b) => (a.name || 'z').localeCompare(b.name || 'z'));
             
             listContainer.innerHTML = '';
@@ -323,33 +321,29 @@
             });
         }
 
-        /**
-         * Funzione di stato aggiornata per gestire i messaggi di controllo.
-         */
         function setStatus(message, type) {
             const el = document.getElementById('connectionStatus');
             el.textContent = message;
             el.className = 'text-sm font-medium mt-2 p-2 rounded-lg transition-colors duration-300 badge-glow ';
             
-            // TailwinCSS classes for the status bar
             if (type === 'ok') { 
                 el.classList.add('text-green-300', 'bg-green-900', 'border', 'border-green-500');
             } else if (type === 'error') { 
                 el.classList.add('text-red-300', 'bg-red-900', 'border', 'border-red-500');
-            } else { 
+            } else { // 'connecting'
                 el.classList.add('text-yellow-300', 'bg-yellow-900', 'border', 'border-yellow-500');
             }
         }
 
         /**
          * Gestisce i messaggi in arrivo dal Durable Object.
-         * Implementa la logica data.control per lo stato verde/rosso.
+         * Il messaggio 'control' è la fonte di verità sullo stato Upstream.
          */
         function handleIncomingMessage(data) {
             try {
                 const message = JSON.parse(data);
 
-                // 1. MESSAGGI DI CONTROLLO (STATO UPSTREAM)
+                // 1. MESSAGGI DI CONTROLLO (STATO UPSTREAM: VERDE/ROSSO)
                 if (message.control) {
                     const status = message.control.status;
                     const msg = message.control.message;
@@ -358,31 +352,25 @@
                         setStatus("AIS STREAM ATTIVO", "ok");
                         systemMessageEl.textContent = msg;
                     } else if (status === 'OFFLINE' || status === 'ERROR') {
-                        setStatus("SERVER ERROR: Disconnesso", "error");
-                        systemMessageEl.textContent = msg; // Mostra il messaggio di errore/rotazione
+                        // Questo è l'UNICO momento in cui lo stato diventa Rosso.
+                        setStatus("AIS STREAM DOWNSTREAM ERROR", "error"); 
+                        systemMessageEl.textContent = msg; 
                     } else {
                         setStatus("CONNESSIONE STABILITA. Richiesta Stream...", "connecting");
                         systemMessageEl.textContent = msg || "In attesa di dati...";
                     }
                     return;
                 }
-
-                // 2. MESSAGGI DI LOG INFORMATIVI VECCHI (mantenuti per retrocompatibilità/debug)
-                if (message.info) {
-                     systemMessageEl.textContent = message.info.replace(/_/g, ' ').toUpperCase();
-                     return;
-                }
-                if (message.error) {
-                    // Se riceve un errore che non è nel nuovo formato 'control', lo gestisce come errore
-                    setStatus("SERVER ERROR: " + message.error, "error");
-                    systemMessageEl.textContent = message.detail || "API server error.";
+                
+                // 2. MESSAGGI DI KEEP ALIVE (ka)
+                if (message.ka) {
+                    // Ignoriamo i keep-alive per pulizia console e UI
                     return;
                 }
 
                 // 3. DATI NAVE
                 if (message.id && (message.lat !== undefined && message.lon !== undefined)) {
                     const existing = vesselDataMap.get(message.id);
-                    // Aggiorna i dati della nave (mantenendo il riferimento al marker)
                     vesselDataMap.set(message.id, { ...existing, ...message, marker: existing?.marker });
                     applyFilters();
                 }
@@ -431,21 +419,28 @@
             ws = new WebSocket(WORKER_URL);
             
             ws.onopen = () => {
-                // Il primo messaggio di stato arriverà dal Worker con data.control.status="ONLINE"
-                systemMessageEl.textContent = "Connessione WebSocket stabilita con successo.";
+                // Aspetta il messaggio 'control' dal server per confermare che lo stream è attivo (VERDE)
+                systemMessageEl.textContent = "Connessione WebSocket stabilita con successo. In attesa di stato Upstream...";
             };
             
             ws.onmessage = (event) => handleIncomingMessage(event.data);
             
-            ws.onclose = () => {
-                setStatus("CONNESSIONE CHIUSA. Tentativo di riconnessione in 5 sec...", "error");
-                systemMessageEl.textContent = "Connessione persa con il proxy/Durable Object.";
-                reconnectTimeout = setTimeout(connectWebSocket, 5000);
+            // MODIFICA CHIAVE QUI: Non impostiamo lo stato su "Errore" se si chiude.
+            ws.onclose = (event) => {
+                // Solo se la chiusura non è stata pulita (cioè un'interruzione)
+                if (!event.wasClean) {
+                    // Indichiamo solo che ci stiamo ricollegando, mantenendo lo stato "Connecting"
+                    setStatus("CONNESSIONE INTERROTTA. Riconnessione in corso...", "connecting");
+                    systemMessageEl.textContent = "Tentativo di ripristinare il tunnel WebSocket in 5 secondi...";
+                    reconnectTimeout = setTimeout(connectWebSocket, 5000);
+                } else {
+                    setStatus("DISCONNESSO (Connessione chiusa)", "error");
+                }
             };
             
             ws.onerror = (err) => {
                 console.error("Errore WebSocket:", err);
-                // L'evento 'onclose' gestirà la logica di riconnessione
+                // Lasciamo che 'onclose' gestisca la logica di riconnessione
             };
         }
 
