@@ -68,6 +68,11 @@
 </head>
 <body class="bg-gray-900 flex h-screen overflow-hidden text-gray-200">
 
+    <div id="alertBanner" class="fixed top-0 left-0 right-0 z-50 p-4 text-center text-white bg-red-700 shadow-2xl transform -translate-y-full transition-transform duration-500 ease-in-out">
+        <strong id="alertMessage">ALERT: Nave critica in zona Geofence!</strong>
+        <button onclick="hideAlertBanner()" class="ml-4 font-bold hover:text-red-200">X</button>
+    </div>
+    
     <button id="openSidebarButton" class="md:hidden fixed top-4 left-4 z-40 p-3 bg-indigo-600 text-white rounded-full shadow-lg hover:bg-indigo-700 transition duration-300">
         <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
@@ -151,6 +156,21 @@
         const placeholder = document.getElementById('vesselListPlaceholder'); 
         const systemMessageEl = document.getElementById('systemMessage');
 
+        // NUOVO: Funzioni per il banner di allerta
+        function showAlertBanner(message) {
+            const banner = document.getElementById('alertBanner');
+            const messageEl = document.getElementById('alertMessage');
+            
+            messageEl.innerHTML = message;
+            banner.classList.remove('-translate-y-full');
+
+            // Nascondi automaticamente dopo 8 secondi
+            setTimeout(hideAlertBanner, 8000);
+        }
+
+        function hideAlertBanner() {
+            document.getElementById('alertBanner').classList.add('-translate-y-full');
+        }
 
         function toggleSidebar(open) {
             if (window.innerWidth >= 768) return; 
@@ -207,6 +227,7 @@
             return 'tag-badge';
         }
 
+        // AGGIORNATO: Aggiunti i nuovi campi IMO, Tipo, Bandiera, Gruppo Proprietario e Ultimo Porto Notato
         function createPopupContent(vessel) {
             let categoryHTML = '';
             if (vessel.military) categoryHTML += '<span class="font-bold text-red-400">::MILITARY::</span><br>';
@@ -229,7 +250,12 @@
                 <strong class="text-lg text-white">${vessel.name}</strong><br>
                 <hr class="my-1 border-gray-600">
                 <span class="text-gray-400">MMSI:</span> ${vessel.mmsi}<br>
-                <span class="text-gray-400">Destinazione:</span> ${vessel.destination || 'N/A'}<br>
+                <span class="text-gray-400">IMO:</span> ${vessel.imo || 'N/A'}<br>
+                <span class="text-gray-400">Tipo:</span> ${vessel.vessel_type || 'N/A'}<br>
+                <span class="text-gray-400">Bandiera:</span> ${vessel.flag || 'N/A'}<br>
+                <span class="text-gray-400">Gruppo Proprietario:</span> ${vessel.owner_group || 'N/A'}<br>
+                <span class="text-gray-400">Ultimo Porto Notato:</span> ${vessel.last_port_call || 'N/A'}<br>
+                <span class="text-gray-400">Destinazione AIS:</span> ${vessel.destination || 'N/A'}<br>
                 <span class="text-gray-400">Stato:</span> ${vessel.status || 'N/A'}<br>
                 <span class="text-gray-400">Velocità:</span> ${vessel.sog ? vessel.sog + ' nodi' : 'N/A'}<br>
                 ${categoryHTML}
@@ -269,6 +295,7 @@
             });
         }
 
+        // AGGIORNATO: Aggiunti IMO e Ultima Toccata alla scheda nella sidebar
         function renderVesselList(vessels) {
             const listContainer = document.getElementById('vesselList');
             const countElement = document.getElementById('vesselCount');
@@ -306,8 +333,9 @@
                         <p class="text-base font-semibold text-gray-50 truncate">${vessel.name}</p>
                         <span class="text-xs font-bold px-2 py-1 rounded-full border ${badgeClass}">${badgeText}</span>
                     </div>
-                    <p class="text-sm text-gray-400 truncate">MMSI: ${vessel.mmsi}</p>
+                    <p class="text-xs text-gray-500 truncate mt-1">IMO: ${vessel.imo || 'N/A'} | Tipo: ${vessel.vessel_type || 'N/A'}</p>
                     <p class="text-sm text-gray-400 truncate">Dest: ${vessel.destination || 'N/A'}</p>
+                    <p class="text-xs text-gray-500 truncate">Ultima Toccata: ${vessel.last_port_call || 'N/A'}</p>
                     ${tags.length ? `<div class="mt-2">${smallTags}</div>` : ``}
                 `;
                 card.onclick = () => {
@@ -342,6 +370,23 @@
         function handleIncomingMessage(data) {
             try {
                 const message = JSON.parse(data);
+                
+                // NUOVO: 0. MESSAGGI DI ALLERTA (GEOFENCING)
+                if (message.alert) {
+                    let alertMsg = '';
+                    const vesselName = message.alert.name || 'Una nave tracciata';
+                    const zoneName = message.alert.zone || 'una zona di interesse';
+                    
+                    if (message.alert.type === 'ARRIVAL_ALERT') {
+                        alertMsg = `<span class="text-yellow-200">${vesselName}</span> è **ENTRATA** nella zona Geofence: <span class="text-yellow-200">${zoneName}</span>!`;
+                    } else if (message.alert.type === 'DEPARTURE_ALERT') {
+                        alertMsg = `<span class="text-yellow-200">${vesselName}</span> è **USCITA** dalla zona Geofence: <span class="text-yellow-200">${zoneName}</span>!`;
+                    }
+                    if (alertMsg) {
+                        showAlertBanner(alertMsg);
+                    }
+                    // Non ritornare qui, la nave potrebbe avere anche un PositionReport
+                }
 
                 // 1. MESSAGGI DI CONTROLLO (STATO UPSTREAM: VERDE/ROSSO)
                 if (message.control) {
@@ -399,7 +444,10 @@
                     (filters.arms && vessel.arms) ||
                     (filters.israel && vessel.is_israel_related);
                 
-                const matchesDestination = !filters.destination || (vessel.destination || '').toLowerCase().includes(filters.destination);
+                // La ricerca per destinazione include ora anche il campo 'last_port_call' in modo implicito se è presente
+                const matchesDestination = !filters.destination || 
+                    (vessel.destination || '').toLowerCase().includes(filters.destination) ||
+                    (vessel.last_port_call || '').toLowerCase().includes(filters.destination);
 
                 return matchesCategory && matchesDestination;
             });
