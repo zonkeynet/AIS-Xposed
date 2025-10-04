@@ -1,4 +1,4 @@
-# ⚓ AIS Live – Warships & Logistics Tracker  
+# ⚓ AIS XPOSED – Warships & Logistics Tracker  
 
 **Because freedom of the seas belongs to the people, not to states or corporations.**  
 
