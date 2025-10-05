@@ -1,0 +1,221 @@
+:root {
+    --bg-dark: #0a0a0a;
+    --bg-container: #151515;
+    --neon-green: #00ff41; /* Verde fluorescente */
+    --highlight-yellow: #f9d342;
+    --text-primary: #ffffff;
+    --text-secondary: #aaaaaa;
+    --border-color: #008822; /* Bordo verde scuro */
+    --input-bg: #222222;
+}
+
+body { 
+    font-family: 'Consolas', 'Courier New', monospace; /* Font Terminale */
+    margin: 0; 
+    padding: 10px; /* Ridotto il padding su mobile */
+    background-color: var(--bg-dark); 
+    color: var(--text-primary); 
+    line-height: 1.6;
+}
+
+.container { 
+    /* max-width: 900px; - Rimosso per fluidità mobile */
+    margin: 0 auto; 
+    background-color: var(--bg-container); 
+    padding: 15px; /* Ridotto il padding interno su mobile */
+    border-radius: 0; 
+    box-shadow: 0 0 15px var(--neon-green), 0 0 5px rgba(0, 0, 0, 0.5); 
+    border: 2px solid var(--neon-green);
+}
+
+h1 { 
+    font-size: 1.5em; /* Dimensione ridotta su mobile */
+    color: var(--neon-green); 
+    text-align: center; 
+    border-bottom: 2px dashed var(--neon-green); 
+    padding-bottom: 10px; /* Ridotto il padding */
+    margin-bottom: 20px; 
+    text-shadow: 0 0 5px var(--neon-green);
+    letter-spacing: 1px; /* Ridotto il letter-spacing */
+}
+
+h3 {
+    font-size: 1.1em; /* Dimensione ridotta su mobile */
+    color: var(--highlight-yellow);
+    margin-top: 5px;
+    margin-bottom: 10px;
+}
+
+#map { 
+    height: 300px; /* Altezza ridotta per non occupare troppo spazio verticale */
+    width: 100%; 
+    border-radius: 0; 
+    margin-bottom: 15px; 
+    border: 3px solid var(--neon-green);
+    filter: grayscale(80%) brightness(120%);
+}
+
+.leaflet-container {
+    background-color: #000;
+}
+
+/* Modifiche per mobile: stack verticale di label e input */
+.input-group { 
+    margin-bottom: 15px; 
+    display: block; /* Da flex a block per mobile */
+    align-items: flex-start; /* Reset di align-items, non più necessario con display: block */
+}
+
+.input-group label { 
+    width: auto; /* Rimosso width fisso */
+    font-weight: bold; 
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    display: block; /* Assicura che la label prenda tutta la larghezza */
+    margin-bottom: 5px; /* Spazio tra label e input */
+}
+
+.input-group input, .input-group select { 
+    width: 100%; /* L'input prende tutta la larghezza disponibile */
+    box-sizing: border-box; /* Assicura che padding e border siano inclusi nel width */
+    padding: 10px; 
+    border-radius: 0; 
+    border: 1px solid var(--border-color); 
+    background-color: var(--input-bg); 
+    color: var(--neon-green);
+    font-family: 'Consolas', 'Courier New', monospace;
+    box-shadow: inset 0 0 3px var(--neon-green);
+    flex-grow: 1; /* Mantenuto ma avrà effetto solo su desktop */
+}
+
+button { 
+    width: 100%;
+    padding: 12px 20px; 
+    background-color: var(--neon-green); 
+    color: var(--bg-dark); 
+    border: none; 
+    border-radius: 0; 
+    cursor: pointer; 
+    font-size: 16px; /* Font size ridotto */
+    font-weight: bold; 
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: background-color 0.1s, box-shadow 0.1s;
+    box-shadow: 0 0 8px var(--neon-green);
+    margin-top: 10px; /* Margine ridotto */
+}
+
+button:hover { 
+    background-color: var(--highlight-yellow); 
+    box-shadow: 0 0 10px var(--highlight-yellow);
+    color: var(--bg-dark);
+}
+
+.info { 
+    background-color: #3e0a0a; 
+    padding: 10px; /* Padding ridotto */
+    border-radius: 0; 
+    border-left: 5px solid red; 
+    margin-top: 15px; 
+    color: #ffaaaa; 
+    margin-bottom: 15px;
+    font-size: 0.9em; /* Font size ridotto */
+}
+
+.coords-display { 
+    margin-left: 0; /* Rimosso il margine sinistro */
+    display: block; /* Ogni coordinata su una nuova linea */
+    color: var(--neon-green); 
+    font-weight: bold; 
+    text-shadow: 0 0 3px var(--neon-green);
+    margin-top: 5px; /* Spazio tra le due righe di coordinate */
+}
+
+.attack-specific-fields { 
+    margin-top: 15px; /* Margine ridotto */
+    padding: 10px; /* Padding ridotto */
+    border: 1px solid var(--border-color); 
+    border-left: 5px solid var(--highlight-yellow);
+    border-right: 5px solid var(--highlight-yellow);
+    background-color: #1a1a1a; 
+    margin-bottom: 15px;
+}
+
+.hidden { 
+    display: none; 
+}
+
+#status-message {
+    font-size: 0.9em; /* Font size ridotto */
+    color: var(--neon-green);
+    text-shadow: 0 0 5px var(--neon-green);
+    margin-top: 15px;
+}
+
+/* ------------------------------------------- */
+/* --- MEDIA QUERY per Tablet e Desktop --- */
+/* ------------------------------------------- */
+/* Applica gli stili desktop a partire da 600px (breakpoint comune) */
+@media (min-width: 600px) {
+    
+    .container {
+        max-width: 900px; /* Reintroduciamo la larghezza massima per il desktop */
+        padding: 25px; /* Reintroduciamo il padding originale */
+    }
+    
+    h1 {
+        font-size: 2em; /* Ripristino della dimensione originale */
+        padding-bottom: 15px;
+        margin-bottom: 30px;
+        letter-spacing: 2px;
+    }
+    
+    h3 {
+        font-size: 1.5em; /* Ripristino della dimensione originale */
+    }
+    
+    #map {
+        height: 400px; /* Ripristino dell'altezza originale */
+        margin-bottom: 20px;
+    }
+
+    /* Ripristino del layout flex per le input-group */
+    .input-group { 
+        display: flex; 
+        align-items: center; 
+    }
+
+    .input-group label { 
+        width: 250px; /* Larghezza fissa per allineare i campi */
+        margin-bottom: 0; /* Rimuoviamo il margine inferiore */
+    }
+    
+    .input-group input, .input-group select { 
+        width: auto; /* Lasciamo che flex-grow faccia il lavoro */
+        box-sizing: content-box;
+    }
+
+    .coords-display { 
+        margin-left: 20px; /* Spazio tra i display delle coordinate */
+        display: inline; /* Allinea in linea le coordinate */
+        margin-top: 0; 
+    }
+    
+    .info { 
+        padding: 15px; 
+        margin-top: 20px; 
+        margin-bottom: 20px;
+        font-size: 1em;
+    }
+    
+    button {
+        font-size: 18px;
+        margin-top: 15px;
+    }
+    
+    .attack-specific-fields { 
+        margin-top: 20px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+}

@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIS-Xposed // CONFIGURATOR</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link rel="stylesheet" href="css/style_gen.css"> 
+    <link rel="icon" href="assets/favicon_hackrf_activist.ico" sizes="16x16 32x32 64x64" />
+    <link rel="icon" type="image/png" sizes="512x512" href="assets/hackrf_activist_icon_512.png" />
+
+</head>
+<body>
+
+<div class="container">
+    <h1>[:: AIS-XPOSED CONFIGURATOR ::]</h1>
+    
+    <div class="info">
+        > WARNING: Questa utility genera file di configurazione per HackRF. 
+        > Non genera il segnale GMSK. Eseguire sempre il backend Python.
+    </div>
+
+    <div id="map"></div>
+
+    <div class="input-group">
+        <label for="attack-mode">Modalità Attacco:</label>
+        <select id="attack-mode" onchange="toggleAttackFields()">
+            <option value="GHOST_SHIP">1. Ghost Ship (Spoofing - Identità Nuova)</option>
+            <option value="VESSEL_CLONE">2. Vessel Clone (Spoofing Avanzato - Clonazione MMSI)</option>
+            <option value="VESSEL_DRAWING">3. Vessel Drawing (DoS Visivo - Disegno Geometrico)</option>
+            <option value="FREQUENCY_HOPPING">4. Frequency Hopping (DoS Logico - Tipo 22)</option>
+            <option value="SAFETY_MESSAGE">5. Safety Message (Allarme Flooding - Tipo 14)</option>
+        </select>
+    </div>
+
+    <div class="attack-specific-fields" style="border-left: 5px solid #00ffff; border-right: 5px solid #00ffff; background-color: #101a1a;">
+        <h3>_ P A R A M E T R I &nbsp; P O S I Z I O N E &nbsp; (AIS Base)</h3>
+        
+        <div class="input-group">
+            <label for="nav-status">Stato Navigazione:</label>
+            <select id="nav-status">
+                <option value="0">0 - In Navigazione (Motore)</option>
+                <option value="1">1 - All'Ancora</option>
+                <option value="2">2 - Non Sotto Comando</option>
+                <option value="3">3 - Capacità di Manovra Limitata</option>
+                <option value="4">4 - In Panning (AIS SART/MOB)</option>
+                <option value="5">5 - Ancorato (Designato)</option>
+                <option value="8">8 - In Navigazione (Vela)</option>
+                <option value="15" selected>15 - Non definito (Default)</option>
+            </select>
+        </div>
+        
+        <div class="input-group">
+            <label for="sog">SOG (Speed Over Ground - Nodi):</label>
+            <input type="number" id="sog" value="12.0" min="0.0" max="50.0" step="0.1">
+        </div>
+        
+        <div class="input-group">
+            <label for="cog">COG (Course Over Ground - Gradi):</label>
+            <input type="number" id="cog" value="45" min="0" max="359">
+        </div>
+        
+        <div class="info" style="border-left: 5px solid #00ffff; background-color: #101a1a; color: #00ffff;">
+             > **Importante:** Questi parametri rendono il segnale AIS coerente con i dati reali di navigazione.
+        </div>
+    </div>
+    <div id="ghost-ship-fields" class="attack-specific-fields hidden">
+        <h3>_ G H O S T &nbsp; S H I P &nbsp; (Nuova Identità)</h3>
+        <div class="input-group">
+            <label for="ghost-name">Nome Nave Fantasma (max 20 char):</label>
+            <input type="text" id="ghost-name" value="GHOST-001" maxlength="20">
+        </div>
+        <div class="info" style="border-left: 5px solid var(--neon-green); background-color: #101510; color: #00ff88;">
+             > Crea una nave fittizia (MMSI fittizio 98xxxxxxx) alle coordinate target.
+        </div>
+    </div>
+    
+    <div id="vessel-clone-fields" class="attack-specific-fields hidden">
+        <h3>_ V E S S E L &nbsp; C L O N E &nbsp; (Clonazione MMSI)</h3>
+        <div class="input-group">
+            <label for="target-mmsi-clone">MMSI Nave da Clonare (Reale):</label>
+            <input type="number" id="target-mmsi-clone" value="247000000" min="100000000" max="999999999">
+        </div>
+        <div class="info" style="border-left: 5px solid red; background-color: #201010; color: #ff0000;">
+             > WARNING: Trasmette la posizione falsa alle coordinate target usando l'identità (MMSI) della nave clonata.
+        </div>
+    </div>
+    
+    <div id="vessel-drawing-fields" class="attack-specific-fields hidden">
+        <h3>_ V E S S E L &nbsp; D R A W I N G &nbsp; (Disegno Geometrico)</h3>
+        <div class="input-group">
+            <label for="target-text">Testo da disegnare (max 20 char):</label>
+            <input type="text" id="target-text" value="FUCK YOU" maxlength="20">
+        </div>
+        <div class="input-group">
+            <label for="num-vessels">Numero Vascelli (Densità Disegno):</label>
+            <input type="number" id="num-vessels" value="150" min="10" max="500">
+        </div>
+        <div class="info" style="border-left: 5px solid var(--highlight-yellow); background-color: #1a1a1a; color: var(--highlight-yellow);">
+            > La logica di generazione ora traccia la **geometria esatta** del testo. 
+            **Consiglio:** Per testi lunghi o complessi (es. "FUCK YOU"), usa almeno **150 vascelli** per garantire la visibilità di tutti i caratteri.
+        </div>
+    </div>
+
+    <div id="frequency-hopping-fields" class="attack-specific-fields hidden">
+        <h3>_ F R E Q U E N C Y &nbsp; H O P P I N G</h3>
+        <div class="input-group">
+            <label for="tx-mmsi">MMSI Autorità Falsa (99xxxxxxx):</label>
+            <input type="number" id="tx-mmsi" value="992500010" min="100000000" max="999999999">
+        </div>
+        <div class="input-group">
+            <label for="new-channel-a">Nuova Freq. Canale A (ITU):</label>
+            <input type="number" id="new-channel-a" value="2020" min="1" max="9999">
+        </div>
+        <div class="input-group">
+            <label for="new-channel-b">Nuova Freq. Canale B (ITU):</label>
+            <input type="number" id="new-channel-b" value="2021" min="1" max="9999">
+        </div>
+        <div class="info" style="border-left: 5px solid var(--neon-green); background-color: #101510; color: #00ff88;">
+             > Reindirizza i ricevitori AIS nell'area selezionata.
+        </div>
+    </div>
+    
+    <div id="safety-message-fields" class="attack-specific-fields hidden">
+        <h3>_ S A F E T Y &nbsp; M E S S A G E &nbsp; (Tipo 14)</h3>
+        <div class="input-group">
+            <label for="safety-mmsi">MMSI Mittente Falso:</label>
+            <input type="number" id="safety-mmsi" value="987654321" min="100000000" max="999999999">
+        </div>
+        <div class="input-group">
+            <label for="safety-text">Testo Allarme (Max 161 caratteri):</label>
+            <input type="text" id="safety-text" value="WARNING: Collision Imminent. Systems Offline." maxlength="161">
+        </div>
+        <div class="info" style="border-left: 5px solid red; background-color: #201010; color: #ff0000;">
+             > ATTENZIONE: Questo messaggio apparirà come allarme di sicurezza sul display.
+        </div>
+    </div>
+    
+    <div class="input-group">
+        <label for="frequency">Canale di Trasmissione (iniziale):</label>
+        <select id="frequency">
+            <option value="AIS-A">AIS-A (161.975 MHz)</option>
+            <option value="AIS-B">AIS-B (162.025 MHz)</option>
+        </select>
+    </div>
+
+    <div class="input-group">
+        <label>Coordinate Target (Click to Acquire):</label>
+        <span id="lat-display" class="coords-display">Lat: 43.55000</span>
+        <span id="lon-display" class="coords-display">Lon: 10.27000</span>
+    </div>
+
+    <button onclick="generateConfig()">[ GENERARE FILE CONFIGURAZIONE JSON ]</button>
+    <p id="status-message" style="margin-top: 15px; color: #42f986;"></p>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+    // Coordinate di default (Livorno, Italia)
+    let selectedLat = 43.55;
+    let selectedLon = 10.27;
+
+    // Inizializza la mappa
+    const map = L.map('map').setView([selectedLat, selectedLon], 10);
+
+    // Aggiungi il layer delle tessere (Tile Layer)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> | Tiles by <a href="https://carto.com/attributions">CartoDB</a>',
+        maxZoom: 18,
+    }).addTo(map);
+
+    // Aggiungi un marcatore per il target
+    let targetMarker = L.marker([selectedLat, selectedLon]).addTo(map)
+        .bindPopup("Target AIS")
+        .openPopup();
+
+    // Aggiorna la visualizzazione delle coordinate
+    function updateCoordsDisplay() {
+        document.getElementById('lat-display').textContent = 'Lat: ' + selectedLat.toFixed(5);
+        document.getElementById('lon-display').textContent = 'Lon: ' + selectedLon.toFixed(5);
+    }
+
+    // Gestore eventi per il click sulla mappa
+    map.on('click', function(e) {
+        selectedLat = e.latlng.lat;
+        selectedLon = e.latlng.lng;
+        
+        targetMarker.setLatLng(e.latlng);
+        targetMarker.setPopupContent("Target Acquisito: " + selectedLat.toFixed(5) + ", " + selectedLon.toFixed(5)).openPopup();
+        
+        updateCoordsDisplay();
+        document.getElementById('status-message').textContent = 'Target GPS Acquisito. Pronti per la generazione.';
+    });
+
+    // Funzione per mostrare/nascondere i campi in base al tipo di attacco
+    function toggleAttackFields() {
+        const mode = document.getElementById('attack-mode').value;
+        
+        // Nasconde tutti i campi specifici
+        document.getElementById('ghost-ship-fields').classList.add('hidden');
+        document.getElementById('vessel-clone-fields').classList.add('hidden');
+        document.getElementById('vessel-drawing-fields').classList.add('hidden');
+        document.getElementById('frequency-hopping-fields').classList.add('hidden');
+        document.getElementById('safety-message-fields').classList.add('hidden');
+
+        // Mostra il campo appropriato
+        if (mode === 'GHOST_SHIP') {
+            document.getElementById('ghost-ship-fields').classList.remove('hidden');
+        } else if (mode === 'VESSEL_CLONE') {
+            document.getElementById('vessel-clone-fields').classList.remove('hidden');
+        } else if (mode === 'VESSEL_DRAWING') {
+            document.getElementById('vessel-drawing-fields').classList.remove('hidden');
+        } else if (mode === 'FREQUENCY_HOPPING') {
+            document.getElementById('frequency-hopping-fields').classList.remove('hidden');
+        } else if (mode === 'SAFETY_MESSAGE') {
+            document.getElementById('safety-message-fields').classList.remove('hidden');
+        }
+    }
+
+    // Funzione per generare e scaricare il file di configurazione JSON
+    function generateConfig() {
+        const attackMode = document.getElementById('attack-mode').value;
+        const freq_name = document.getElementById('frequency').value;
+        
+        // **********************************
+        // NUOVA ACQUISIZIONE DEI PARAMETRI AIS BASE
+        const navStatus = parseInt(document.getElementById('nav-status').value);
+        const sog = parseFloat(document.getElementById('sog').value);
+        const cog = parseInt(document.getElementById('cog').value);
+        // **********************************
+        
+        let config = {
+            "attack_mode": attackMode,
+            "center_lat": selectedLat,
+            "center_lon": selectedLon,
+            "frequency_name": freq_name,
+            "timestamp": new Date().toISOString(),
+            // AGGIUNTA DEI PARAMETRI AIS STANDARD AL PAYLOAD
+            "nav_status": navStatus,
+            "sog": sog,
+            "cog": cog
+        };
+
+        let filename;
+        
+        if (attackMode === 'GHOST_SHIP') {
+            const text = document.getElementById('ghost-name').value.toUpperCase().trim();
+            if (!text || text.length === 0) {
+                alert("[ERROR] Inserisci un nome per il Ghost Ship.");
+                return;
+            }
+            config["text"] = text;
+            filename = `ais_config_GHOST_${text}.json`;
+
+        } else if (attackMode === 'VESSEL_CLONE') {
+            const targetMmsi = parseInt(document.getElementById('target-mmsi-clone').value);
+            if (targetMmsi < 100000000 || targetMmsi > 999999999) {
+                alert("[ERROR] Inserisci un MMSI valido (9 cifre).");
+                return;
+            }
+            config["target_mmsi"] = targetMmsi;
+            filename = `ais_config_CLONE_${targetMmsi}.json`;
+
+        } else if (attackMode === 'VESSEL_DRAWING') {
+            const text = document.getElementById('target-text').value.toUpperCase().trim();
+            const vessels = parseInt(document.getElementById('num-vessels').value);
+            
+            if (!text || text.length === 0) {
+                alert("[ERROR] Inserisci una stringa per il Vessel Drawing.");
+                return;
+            }
+            config["text"] = text;
+            config["num_vessels"] = vessels;
+            filename = `ais_config_DRAWING_${text}.json`;
+
+        } else if (attackMode === 'FREQUENCY_HOPPING') {
+            const txMmsi = parseInt(document.getElementById('tx-mmsi').value);
+            const channelA = parseInt(document.getElementById('new-channel-a').value);
+            const channelB = parseInt(document.getElementById('new-channel-b').value);
+
+            if (channelA < 1 || channelB < 1) {
+                alert("[ERROR] I canali ITU devono essere numeri positivi.");
+                return;
+            }
+            config["tx_mmsi"] = txMmsi;
+            config["new_channel_a"] = channelA;
+            config["new_channel_b"] = channelB;
+            // Questi messaggi (Tipo 22) non contengono SOG/COG, quindi non usiamo i parametri base qui, anche se sono nel file.
+            // Il backend Python può decidere di ignorarli o usarli per un messaggio di posizione accessorio.
+            delete config.nav_status;
+            delete config.sog;
+            delete config.cog;
+            filename = `ais_config_FH_${channelA}-${channelB}.json`;
+            
+        } else if (attackMode === 'SAFETY_MESSAGE') {
+            const safetyMmsi = parseInt(document.getElementById('safety-mmsi').value);
+            const safetyText = document.getElementById('safety-text').value.trim();
+
+            if (!safetyText || safetyText.length === 0) {
+                alert("[ERROR] Inserisci il testo dell'allarme di sicurezza.");
+                return;
+            }
+            config["mmsi"] = safetyMmsi;
+            config["text"] = safetyText;
+            // Questi messaggi (Tipo 14) non contengono SOG/COG, quindi non usiamo i parametri base qui.
+            delete config.nav_status;
+            delete config.sog;
+            delete config.cog;
+            filename = `ais_config_SAFETY_${safetyMmsi}.json`;
+        }
+
+
+        // Creazione del Blob e download (invariato)
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 4));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", filename);
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+
+        document.getElementById('status-message').textContent = `[ OK ] Configurazione salvata: '${filename}'. Eseguire lo script Python.`;
+    }
+
+    // Inizializza la visualizzazione e i campi di attacco
+    updateCoordsDisplay();
+    toggleAttackFields(); 
+</script>
+
+</body>
+</html>
