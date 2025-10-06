@@ -133,371 +133,449 @@
 
     <main id="map" class="flex-grow"></main>
 
-    <script>
-        // === VARIABILI GLOBALI E SETUP ===
-        const map = L.map('map').setView([38.0, 15.0], 5);
-        const vesselDataMap = new Map();
-        const markerLayer = new L.LayerGroup().addTo(map);
-        
-        // URL del tuo Worker/Durable Object
-        const WORKER_URL = `wss://ais-proxy.zonkeynet.workers.dev/api/vessels`;
-        
-        let ws;
-        let reconnectTimeout;
+<script>
+    // === VARIABILI GLOBALI E SETUP ===
+    const map = L.map('map').setView([38.0, 15.0], 5);
+    const vesselDataMap = new Map();
+    const markerLayer = new L.LayerGroup().addTo(map);
+    
+    // URL del tuo Worker/Durable Object
+    const WORKER_URL = `wss://ais-proxy.zonkeynet.workers.dev/api/vessels`;
+    
+    // NUOVO: Tempo massimo (30 minuti) per considerare la posizione come "fresca"
+    const MAX_STALE_AGE_MS = 30 * 60 * 1000; 
 
-        const COLOR_MAP = {
-            military: '#f87171', 
-            arms: '#fbbf24',    
-            israel: '#6366f1',  
-            default: '#4ade80'  
+    let ws;
+    let reconnectTimeout;
+
+    const COLOR_MAP = {
+        military: '#f87171', 
+        arms: '#fbbf24',    
+        israel: '#6366f1',  
+        default: '#4ade80'  
+    };
+    
+    // ELEMENTI UI
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('sidebarOverlay');
+    const openBtn = document.getElementById('openSidebarButton');
+    const closeBtn = document.getElementById('closeSidebarButton');
+    const placeholder = document.getElementById('vesselListPlaceholder'); 
+    const systemMessageEl = document.getElementById('systemMessage');
+
+    // NUOVO: Funzione di utilità per formattare il timestamp
+    function formatLastUpdate(timestamp) {
+        if (!timestamp) return 'Sconosciuto';
+        const now = Date.now();
+        const elapsed = now - timestamp;
+        const minutes = Math.floor(elapsed / 60000);
+
+        if (minutes < 1) return 'Adesso';
+        if (minutes < 60) return `${minutes} min fa`;
+        
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours} h fa`;
+
+        const days = Math.floor(hours / 24);
+        return `${days} gg fa`;
+    }
+
+    // NUOVO: Funzioni per il banner di allerta
+    function showAlertBanner(message) {
+        const banner = document.getElementById('alertBanner');
+        const messageEl = document.getElementById('alertMessage');
+        
+        messageEl.innerHTML = message;
+        banner.classList.remove('-translate-y-full');
+
+        // Nascondi automaticamente dopo 8 secondi
+        setTimeout(hideAlertBanner, 8000);
+    }
+
+    function hideAlertBanner() {
+        document.getElementById('alertBanner').classList.add('-translate-y-full');
+    }
+
+    function toggleSidebar(open) {
+        if (window.innerWidth >= 768) return; 
+        if (open) {
+            sidebar.classList.remove('-translate-x-full');
+            overlay.classList.add('opacity-50', 'pointer-events-auto');
+        } else {
+            sidebar.classList.add('-translate-x-full');
+            overlay.classList.remove('opacity-50', 'pointer-events-auto');
+        }
+    }
+
+    openBtn.addEventListener('click', () => toggleSidebar(true));
+    closeBtn.addEventListener('click', () => toggleSidebar(false));
+    overlay.addEventListener('click', () => toggleSidebar(false));
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap & CARTO',
+        subdomains: 'abcd',
+        maxZoom: 20
+    }).addTo(map);
+
+    function getMarkerIcon(vessel) {
+        let color = COLOR_MAP.default;
+        
+        // Determina il colore base in base alle categorie
+        if (vessel.military) color = COLOR_MAP.military;
+        else if (vessel.arms) color = COLOR_MAP.arms;
+        else if (vessel.is_israel_related) color = COLOR_MAP.israel;
+        
+        // NUOVO: Check obsolescenza per la classe CSS
+        const now = Date.now();
+        const isStale = vessel.last_update && (now - vessel.last_update) > MAX_STALE_AGE_MS;
+        
+        // Se i dati sono obsoleti, usa un grigio per la visualizzazione sulla mappa
+        const finalColor = isStale ? '#9CA3AF' : color; 
+
+        // Rotazione del marker
+        const rotationAngle = vessel.trueHeading || vessel.cog || 0;
+
+        const svgContent = `
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${rotationAngle}deg);">
+                <path d="M14 2L7 26H21L14 2Z" fill="${finalColor}" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>`;
+        
+        return L.divIcon({
+            className: 'custom-marker',
+            html: svgContent,
+            iconSize: [28, 28],
+            iconAnchor: [14, 14],
+            popupAnchor: [0, -14]
+        });
+    }
+
+    function tagClass(tag) {
+        const t = tag.toLowerCase();
+        if (t.includes('ohchr') || t.includes('un')) return 'tag-badge tag--un';
+        if (t.includes('investigative')) return 'tag-badge tag--invest';
+        if (t.includes('union') || t.includes('blocked')) return 'tag-badge tag--union';
+        if (t.includes('denial')) return 'tag-badge tag--deny';
+        if (t.includes('energy') || t.includes('lng') || t.includes('coal')) return 'tag-badge tag--energy';
+        if (t.includes('ammo')) return 'tag-badge tag--ammo';
+        if (t.includes('settlement')) return 'tag-badge tag--settle';
+        if (t.includes('israel')) return 'tag-badge tag--israel';
+        if (t.includes('sanction')) return 'tag-badge tag--sanct';
+        if (t.includes('military')) return 'tag-badge tag--mil';
+        return 'tag-badge';
+    }
+
+    // AGGIORNATO: Inclusi i campi IMO, Ultimo Aggiornamento e Stato
+    function createPopupContent(vessel) {
+        let categoryHTML = '';
+        if (vessel.military) categoryHTML += '<span class="font-bold text-red-400">::MILITARY::</span><br>';
+        if (vessel.arms) categoryHTML += '<span class="font-bold text-amber-400">::ARMS_TRANSPORT::</span><br>';
+        if (vessel.is_israel_related) categoryHTML += '<span class="font-bold text-indigo-400">::ISRAEL_AFFILIATE::</span><br>';
+        
+        const now = Date.now();
+        const isStale = vessel.last_update && (now - vessel.last_update) > MAX_STALE_AGE_MS;
+        const statusText = isStale ? `<span class="text-red-400 font-bold">OBSOLETO</span>` : `<span class="text-green-400 font-bold">ATTIVO</span>`;
+        const lastUpdateText = formatLastUpdate(vessel.last_update);
+
+
+        let tagsHTML = '';
+        const tags = Array.isArray(vessel.tags) ? vessel.tags : [];
+        if (tags.length > 0) {
+            tagsHTML = `
+                <div class="mt-2 text-xs">
+                    <span class="font-bold text-gray-400">Fonti / motivazioni:</span>
+                    <div class="mt-1">
+                        ${tags.map(t => `<span class="${tagClass(t)}">${t}</span>`).join('')}
+                    </div>
+                </div>`;
+        }
+
+        return `
+            <strong class="text-lg text-white">${vessel.name}</strong><br>
+            <hr class="my-1 border-gray-600">
+            <span class="text-gray-400">MMSI:</span> ${vessel.mmsi}<br>
+            <span class="text-gray-400">IMO:</span> ${vessel.imo || 'N/A'}<br>
+            <span class="text-gray-400">Tipo:</span> ${vessel.vessel_type || 'N/A'}<br>
+            <span class="text-gray-400">Bandiera:</span> ${vessel.flag || 'N/A'}<br>
+            <span class="text-gray-400">Gruppo Proprietario:</span> ${vessel.owner_group || 'N/A'}<br>
+            <span class="text-gray-400">Ultimo Porto Notato:</span> ${vessel.last_port_call || 'N/A'}<br>
+            <span class="text-gray-400">Destinazione AIS:</span> ${vessel.destination || 'N/A'}<br>
+            <hr class="my-1 border-gray-600">
+            <span class="text-gray-400">Stato Posizione:</span> ${statusText}<br>
+            <span class="text-gray-400">Ultimo Agg.:</span> ${lastUpdateText}<br>
+            <span class="text-gray-400">Velocità:</span> ${vessel.sog ? vessel.sog + ' nodi' : 'N/A'}<br>
+            ${categoryHTML}
+            ${tagsHTML}
+        `;
+    }
+    
+    function renderMapMarkers(filteredVessels) {
+        const displayedMMSIs = new Set();
+        
+        filteredVessels.forEach(vessel => {
+            // Se non ci sono coordinate valide, non creare/aggiornare il marker
+            if (vessel.lat === null || vessel.lon === null || Number.isNaN(vessel.lat) || Number.isNaN(vessel.lon)) return;
+            
+            displayedMMSIs.add(vessel.mmsi);
+            
+            const icon = getMarkerIcon(vessel);
+            
+            if (vessel.marker) {
+                // Aggiorna posizione, icona e popup se il marker esiste
+                vessel.marker.setLatLng([vessel.lat, vessel.lon]).setIcon(icon);
+                if (vessel.marker._popup) vessel.marker.setPopupContent(createPopupContent(vessel));
+            } else {
+                // Crea nuovo marker
+                vessel.marker = L.marker([vessel.lat, vessel.lon], { icon: icon, rotationAngle: vessel.cog || 0 }).addTo(markerLayer);
+                vessel.marker.bindPopup(() => createPopupContent(vessel));
+                vessel.marker.on('click', () => {
+                    document.getElementById(`card-${vessel.mmsi}`).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    const cardEl = document.getElementById(`card-${vessel.mmsi}`);
+                    cardEl.classList.add('shadow-indigo-500/80');
+                    setTimeout(() => cardEl.classList.remove('shadow-indigo-500/80'), 1500);
+                    toggleSidebar(false); 
+                });
+            }
+        });
+
+        // Rimuovi i marker che non sono più nel set filtrato (solo quelli con marker)
+        // Nota: Nel tuo codice originale questo blocco di logica era presente, ma è stato rimosso in un'iterazione precedente.
+        // Lo reinseriamo in una forma che rimuove i marker non filtrati.
+        vesselDataMap.forEach(vessel => {
+            if (vessel.marker && !displayedMMSIs.has(vessel.mmsi)) {
+                // Solo nascondere il marker se i filtri lo escludono.
+                markerLayer.removeLayer(vessel.marker);
+                vessel.marker = null;
+            }
+        });
+    }
+
+    // AGGIORNATO: Aggiunti IMO e Ultima Toccata alla scheda nella sidebar E last_update
+    function renderVesselList(vessels) {
+        const listContainer = document.getElementById('vesselList');
+        const countElement = document.getElementById('vesselCount');
+        
+        vessels.sort((a, b) => (a.name || 'z').localeCompare(b.name || 'z'));
+        
+        listContainer.innerHTML = '';
+        countElement.textContent = vessels.length;
+        placeholder.style.display = vessels.length > 0 ? 'none' : 'block';
+
+        const now = Date.now();
+
+        vessels.forEach(vessel => {
+            // NUOVO: Logica per lo stato OBSOLETO nella lista
+            const isStale = vessel.last_update && (now - vessel.last_update) > MAX_STALE_AGE_MS;
+            const lastUpdateText = formatLastUpdate(vessel.last_update);
+
+            let badgeClass, badgeText;
+            if (vessel.military) { 
+                badgeClass = 'bg-red-900 text-red-300 border-red-500 badge-glow'; 
+                badgeText = 'MIL_FORCE'; 
+            } else if (vessel.arms) { 
+                badgeClass = 'bg-amber-900 text-amber-300 border-amber-500 badge-glow'; 
+                badgeText = 'ARMS_LOADED'; 
+            } else if (vessel.is_israel_related) { 
+                badgeClass = 'bg-indigo-900 text-indigo-300 border-indigo-500 badge-glow'; 
+                badgeText = 'ZIM_AFFILIATE'; 
+            } else { 
+                badgeClass = 'bg-green-900 text-green-300 border-green-500'; 
+                badgeText = 'STANDARD'; 
+            }
+            
+            const tags = Array.isArray(vessel.tags) ? vessel.tags : [];
+            const smallTags = tags.slice(0, 3).map(t => `<span class="${tagClass(t)}">${t}</span>`).join('');
+
+            const card = document.createElement('div');
+            card.id = `card-${vessel.mmsi}`;
+            // NUOVO: Aggiunge opacità se la nave è obsoleta
+            card.className = `vessel-card p-3 rounded-lg bg-gray-900 border border-gray-700 shadow-xl ${isStale ? 'opacity-50' : ''}`; 
+            card.innerHTML = `
+                <div class="flex justify-between items-start">
+                    <div>
+                        <p class="text-base font-semibold text-gray-50 truncate">${vessel.name}</p>
+                        <p class="text-xs text-gray-500 truncate mt-1">IMO: ${vessel.imo || 'N/A'} | Tipo: ${vessel.vessel_type || 'N/A'}</p>
+                    </div>
+                    <span class="text-xs font-bold px-2 py-1 rounded-full border ${badgeClass}">${badgeText}</span>
+                </div>
+                <p class="text-sm text-gray-400 truncate mt-2">Dest: ${vessel.destination || 'N/A'}</p>
+                <div class="mt-1 flex justify-between items-center text-xs">
+                    <p class="text-gray-500 truncate">Ultima Toccata: ${vessel.last_port_call || 'N/A'}</p>
+                    <p class="font-bold ${isStale ? 'text-red-400' : 'text-green-400'}">${lastUpdateText}</p>
+                </div>
+                ${tags.length ? `<div class="mt-2">${smallTags}</div>` : ``}
+            `;
+            card.onclick = () => {
+                if (vessel.marker && vessel.lat && vessel.lon) {
+                    map.setView([vessel.lat, vessel.lon], 10);
+                    vessel.marker.openPopup();
+                    toggleSidebar(false); 
+                }
+            };
+            listContainer.appendChild(card);
+        });
+    }
+
+    function setStatus(message, type) {
+        const el = document.getElementById('connectionStatus');
+        el.textContent = message;
+        el.className = 'text-sm font-medium mt-2 p-2 rounded-lg transition-colors duration-300 badge-glow ';
+        
+        if (type === 'ok') { 
+            el.classList.add('text-green-300', 'bg-green-900', 'border', 'border-green-500');
+        } else if (type === 'error') { 
+            el.classList.add('text-red-300', 'bg-red-900', 'border', 'border-red-500');
+        } else { // 'connecting'
+            el.classList.add('text-yellow-300', 'bg-yellow-900', 'border', 'border-yellow-500');
+        }
+    }
+
+    /**
+     * Gestisce i messaggi in arrivo dal Durable Object.
+     * Il messaggio 'control' è la fonte di verità sullo stato Upstream.
+     */
+    function handleIncomingMessage(data) {
+        try {
+            const message = JSON.parse(data);
+            
+            // 0. MESSAGGI DI ALLERTA (GEOFENCING)
+            if (message.alert) {
+                let alertMsg = '';
+                const vesselName = message.alert.name || 'Una nave tracciata';
+                const zoneName = message.alert.zone || 'una zona di interesse';
+                
+                if (message.alert.type === 'ARRIVAL_ALERT') {
+                    alertMsg = `<span class="text-yellow-200">${vesselName}</span> è **ENTRATA** nella zona Geofence: <span class="text-yellow-200">${zoneName}</span>!`;
+                } else if (message.alert.type === 'DEPARTURE_ALERT') {
+                    alertMsg = `<span class="text-yellow-200">${vesselName}</span> è **USCITA** dalla zona Geofence: <span class="text-yellow-200">${zoneName}</span>!`;
+                }
+                if (alertMsg) {
+                    showAlertBanner(alertMsg);
+                }
+                // Non ritornare qui, la nave potrebbe avere anche un PositionReport
+            }
+
+            // 1. MESSAGGI DI CONTROLLO (STATO UPSTREAM: VERDE/ROSSO)
+            if (message.control) {
+                const status = message.control.status;
+                const msg = message.control.message;
+                
+                if (status === 'ONLINE') {
+                    setStatus("AIS STREAM ATTIVO", "ok");
+                    systemMessageEl.textContent = msg;
+                } else if (status === 'OFFLINE' || status === 'ERROR') {
+                    // Questo è l'UNICO momento in cui lo stato diventa Rosso.
+                    setStatus("AIS STREAM DOWNSTREAM ERROR", "error"); 
+                    systemMessageEl.textContent = msg; 
+                } else {
+                    setStatus("CONNESSIONE STABILITA. Richiesta Stream...", "connecting");
+                    systemMessageEl.textContent = msg || "In attesa di dati...";
+                }
+                return;
+            }
+            
+            // 2. MESSAGGI DI KEEP ALIVE (ka)
+            if (message.ka) {
+                // Ignoriamo i keep-alive per pulizia console e UI
+                return;
+            }
+
+            // 3. DATI NAVE (Aggiornamento: ora accettiamo qualsiasi aggiornamento, inclusi i soli dati statici/last_update)
+            if (message.mmsi) {
+                const existing = vesselDataMap.get(message.mmsi);
+                
+                // Uniamo i dati esistenti con i nuovi dati in arrivo
+                const updatedVessel = { 
+                    ...existing, 
+                    ...message, 
+                    // Manteniamo il marker esistente se presente
+                    marker: existing?.marker 
+                };
+                
+                // Gestione dei campi lat/lon/trueHeading, assicurandoci che siano null se non arrivano
+                updatedVessel.lat = message.lat !== undefined ? message.lat : existing?.lat || null;
+                updatedVessel.lon = message.lon !== undefined ? message.lon : existing?.lon || null;
+                updatedVessel.trueHeading = message.trueHeading !== undefined ? message.trueHeading : existing?.trueHeading || null;
+                
+                vesselDataMap.set(message.mmsi, updatedVessel);
+                applyFilters();
+            }
+        } catch (e) { 
+            console.error("Errore nel processare il messaggio:", e, data); 
+            systemMessageEl.textContent = "FATAL PARSE ERROR.";
+        }
+    }
+
+    function applyFilters() {
+        const filters = {
+            military: document.getElementById('filterMilitary').checked,
+            arms: document.getElementById('filterArms').checked,
+            israel: document.getElementById('filterIsrael').checked,
+            destination: document.getElementById('destinationPort').value.toLowerCase().trim()
+        };
+
+        const allFiltersUnchecked = !filters.military && !filters.arms && !filters.israel;
+        const vesselArray = Array.from(vesselDataMap.values());
+
+        // AGGIORNATO: Non filtriamo più le navi senza posizione, ma solo quelle che NON soddisfano i filtri di categoria/destinazione.
+        const filteredVessels = vesselArray.filter(vessel => {
+            // Se non ha nome o MMSI è un dato incompleto (anche se il DO dovrebbe prevenire questo)
+            if (!vessel.name) return false; 
+
+            // Filtro di Categoria
+            const matchesCategory = allFiltersUnchecked ||
+                (filters.military && vessel.military) ||
+                (filters.arms && vessel.arms) ||
+                (filters.israel && vessel.is_israel_related);
+            
+            // Filtro di Destinazione/Ultimo Porto
+            const matchesDestination = !filters.destination || 
+                (vessel.destination || '').toLowerCase().includes(filters.destination) ||
+                (vessel.last_port_call || '').toLowerCase().includes(filters.destination);
+
+            return matchesCategory && matchesDestination;
+        });
+
+        // NOTA BENE: renderMapMarkers ora gestisce navi senza lat/lon non creandole.
+        renderMapMarkers(filteredVessels);
+        renderVesselList(filteredVessels);
+    }
+
+    function connectWebSocket() {
+        if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+        }
+        if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+        
+        setStatus("CONNESSO AL PROXY. Richiesta Stream...", "connecting");
+        ws = new WebSocket(WORKER_URL);
+        
+        ws.onopen = () => {
+            systemMessageEl.textContent = "Connessione WebSocket stabilita con successo. In attesa di stato Upstream...";
         };
         
-        // ELEMENTI UI
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('sidebarOverlay');
-        const openBtn = document.getElementById('openSidebarButton');
-        const closeBtn = document.getElementById('closeSidebarButton');
-        const placeholder = document.getElementById('vesselListPlaceholder'); 
-        const systemMessageEl = document.getElementById('systemMessage');
-
-        // NUOVO: Funzioni per il banner di allerta
-        function showAlertBanner(message) {
-            const banner = document.getElementById('alertBanner');
-            const messageEl = document.getElementById('alertMessage');
-            
-            messageEl.innerHTML = message;
-            banner.classList.remove('-translate-y-full');
-
-            // Nascondi automaticamente dopo 8 secondi
-            setTimeout(hideAlertBanner, 8000);
-        }
-
-        function hideAlertBanner() {
-            document.getElementById('alertBanner').classList.add('-translate-y-full');
-        }
-
-        function toggleSidebar(open) {
-            if (window.innerWidth >= 768) return; 
-            if (open) {
-                sidebar.classList.remove('-translate-x-full');
-                overlay.classList.add('opacity-50', 'pointer-events-auto');
-            } else {
-                sidebar.classList.add('-translate-x-full');
-                overlay.classList.remove('opacity-50', 'pointer-events-auto');
-            }
-        }
-
-        openBtn.addEventListener('click', () => toggleSidebar(true));
-        closeBtn.addEventListener('click', () => toggleSidebar(false));
-        overlay.addEventListener('click', () => toggleSidebar(false));
-
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; OpenStreetMap & CARTO',
-            subdomains: 'abcd',
-            maxZoom: 20
-        }).addTo(map);
-
-        function getMarkerIcon(vessel) {
-            let color = COLOR_MAP.default;
-            if (vessel.military) color = COLOR_MAP.military;
-            else if (vessel.arms) color = COLOR_MAP.arms;
-            else if (vessel.is_israel_related) color = COLOR_MAP.israel;
-
-            const svgContent = `
-                <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style="transform: rotate(${vessel.cog || 0}deg);">
-                    <path d="M14 2L7 26H21L14 2Z" fill="${color}" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
-                </svg>`;
-            return L.divIcon({
-                className: 'custom-marker',
-                html: svgContent,
-                iconSize: [28, 28],
-                iconAnchor: [14, 14],
-                popupAnchor: [0, -14]
-            });
-        }
-
-        function tagClass(tag) {
-            const t = tag.toLowerCase();
-            if (t.includes('ohchr') || t.includes('un')) return 'tag-badge tag--un';
-            if (t.includes('investigative')) return 'tag-badge tag--invest';
-            if (t.includes('union') || t.includes('blocked')) return 'tag-badge tag--union';
-            if (t.includes('denial')) return 'tag-badge tag--deny';
-            if (t.includes('energy') || t.includes('lng') || t.includes('coal')) return 'tag-badge tag--energy';
-            if (t.includes('ammo')) return 'tag-badge tag--ammo';
-            if (t.includes('settlement')) return 'tag-badge tag--settle';
-            if (t.includes('israel')) return 'tag-badge tag--israel';
-            if (t.includes('sanction')) return 'tag-badge tag--sanct';
-            if (t.includes('military')) return 'tag-badge tag--mil';
-            return 'tag-badge';
-        }
-
-        // AGGIORNATO: Aggiunti i nuovi campi IMO, Tipo, Bandiera, Gruppo Proprietario e Ultimo Porto Notato
-        function createPopupContent(vessel) {
-            let categoryHTML = '';
-            if (vessel.military) categoryHTML += '<span class="font-bold text-red-400">::MILITARY::</span><br>';
-            if (vessel.arms) categoryHTML += '<span class="font-bold text-amber-400">::ARMS_TRANSPORT::</span><br>';
-            if (vessel.is_israel_related) categoryHTML += '<span class="font-bold text-indigo-400">::ISRAEL_AFFILIATE::</span><br>';
-
-            let tagsHTML = '';
-            const tags = Array.isArray(vessel.tags) ? vessel.tags : [];
-            if (tags.length > 0) {
-                tagsHTML = `
-                    <div class="mt-2 text-xs">
-                        <span class="font-bold text-gray-400">Fonti / motivazioni:</span>
-                        <div class="mt-1">
-                            ${tags.map(t => `<span class="${tagClass(t)}">${t}</span>`).join('')}
-                        </div>
-                    </div>`;
-            }
-
-            return `
-                <strong class="text-lg text-white">${vessel.name}</strong><br>
-                <hr class="my-1 border-gray-600">
-                <span class="text-gray-400">MMSI:</span> ${vessel.mmsi}<br>
-                <span class="text-gray-400">IMO:</span> ${vessel.imo || 'N/A'}<br>
-                <span class="text-gray-400">Tipo:</span> ${vessel.vessel_type || 'N/A'}<br>
-                <span class="text-gray-400">Bandiera:</span> ${vessel.flag || 'N/A'}<br>
-                <span class="text-gray-400">Gruppo Proprietario:</span> ${vessel.owner_group || 'N/A'}<br>
-                <span class="text-gray-400">Ultimo Porto Notato:</span> ${vessel.last_port_call || 'N/A'}<br>
-                <span class="text-gray-400">Destinazione AIS:</span> ${vessel.destination || 'N/A'}<br>
-                <span class="text-gray-400">Stato:</span> ${vessel.status || 'N/A'}<br>
-                <span class="text-gray-400">Velocità:</span> ${vessel.sog ? vessel.sog + ' nodi' : 'N/A'}<br>
-                ${categoryHTML}
-                ${tagsHTML}
-            `;
-        }
+        ws.onmessage = (event) => handleIncomingMessage(event.data);
         
-        function renderMapMarkers(filteredVessels) {
-            const displayedMMSIs = new Set();
-            filteredVessels.forEach(vessel => {
-                if (vessel.lat === null || vessel.lon === null) return;
-                
-                displayedMMSIs.add(vessel.mmsi);
-                const icon = getMarkerIcon(vessel);
-                
-                if (vessel.marker) {
-                    vessel.marker.setLatLng([vessel.lat, vessel.lon]).setIcon(icon);
-                    if (vessel.marker._popup) vessel.marker.setPopupContent(createPopupContent(vessel));
-                } else {
-                    vessel.marker = L.marker([vessel.lat, vessel.lon], { icon: icon }).addTo(markerLayer);
-                    vessel.marker.bindPopup(() => createPopupContent(vessel));
-                    vessel.marker.on('click', () => {
-                        document.getElementById(`card-${vessel.mmsi}`).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                        const cardEl = document.getElementById(`card-${vessel.mmsi}`);
-                        cardEl.classList.add('shadow-indigo-500/80');
-                        setTimeout(() => cardEl.classList.remove('shadow-indigo-500/80'), 1500);
-                        toggleSidebar(false); 
-                    });
-                }
-            });
-
-            vesselDataMap.forEach(vessel => {
-                if (vessel.marker && !displayedMMSIs.has(vessel.mmsi)) {
-                    markerLayer.removeLayer(vessel.marker);
-                    vessel.marker = null;
-                }
-            });
-        }
-
-        // AGGIORNATO: Aggiunti IMO e Ultima Toccata alla scheda nella sidebar
-        function renderVesselList(vessels) {
-            const listContainer = document.getElementById('vesselList');
-            const countElement = document.getElementById('vesselCount');
-            
-            vessels.sort((a, b) => (a.name || 'z').localeCompare(b.name || 'z'));
-            
-            listContainer.innerHTML = '';
-            countElement.textContent = vessels.length;
-            placeholder.style.display = vessels.length > 0 ? 'none' : 'block';
-
-            vessels.forEach(vessel => {
-                let badgeClass, badgeText;
-                if (vessel.military) { 
-                    badgeClass = 'bg-red-900 text-red-300 border-red-500 badge-glow'; 
-                    badgeText = 'MIL_FORCE'; 
-                } else if (vessel.arms) { 
-                    badgeClass = 'bg-amber-900 text-amber-300 border-amber-500 badge-glow'; 
-                    badgeText = 'ARMS_LOADED'; 
-                } else if (vessel.is_israel_related) { 
-                    badgeClass = 'bg-indigo-900 text-indigo-300 border-indigo-500 badge-glow'; 
-                    badgeText = 'ZIM_AFFILIATE'; 
-                } else { 
-                    badgeClass = 'bg-green-900 text-green-300 border-green-500'; 
-                    badgeText = 'STANDARD'; 
-                }
-
-                const tags = Array.isArray(vessel.tags) ? vessel.tags : [];
-                const smallTags = tags.slice(0, 3).map(t => `<span class="${tagClass(t)}">${t}</span>`).join('');
-
-                const card = document.createElement('div');
-                card.id = `card-${vessel.mmsi}`;
-                card.className = "vessel-card p-3 rounded-lg bg-gray-900 border border-gray-700 shadow-xl";
-                card.innerHTML = `
-                    <div class="flex justify-between items-center">
-                        <p class="text-base font-semibold text-gray-50 truncate">${vessel.name}</p>
-                        <span class="text-xs font-bold px-2 py-1 rounded-full border ${badgeClass}">${badgeText}</span>
-                    </div>
-                    <p class="text-xs text-gray-500 truncate mt-1">IMO: ${vessel.imo || 'N/A'} | Tipo: ${vessel.vessel_type || 'N/A'}</p>
-                    <p class="text-sm text-gray-400 truncate">Dest: ${vessel.destination || 'N/A'}</p>
-                    <p class="text-xs text-gray-500 truncate">Ultima Toccata: ${vessel.last_port_call || 'N/A'}</p>
-                    ${tags.length ? `<div class="mt-2">${smallTags}</div>` : ``}
-                `;
-                card.onclick = () => {
-                    if (vessel.marker && vessel.lat && vessel.lon) {
-                        map.setView([vessel.lat, vessel.lon], 10);
-                        vessel.marker.openPopup();
-                        toggleSidebar(false); 
-                    }
-                };
-                listContainer.appendChild(card);
-            });
-        }
-
-        function setStatus(message, type) {
-            const el = document.getElementById('connectionStatus');
-            el.textContent = message;
-            el.className = 'text-sm font-medium mt-2 p-2 rounded-lg transition-colors duration-300 badge-glow ';
-            
-            if (type === 'ok') { 
-                el.classList.add('text-green-300', 'bg-green-900', 'border', 'border-green-500');
-            } else if (type === 'error') { 
-                el.classList.add('text-red-300', 'bg-red-900', 'border', 'border-red-500');
-            } else { // 'connecting'
-                el.classList.add('text-yellow-300', 'bg-yellow-900', 'border', 'border-yellow-500');
+        ws.onclose = (event) => {
+            if (!event.wasClean) {
+                setStatus("CONNESSIONE INTERROTTA. Riconnessione in corso...", "connecting");
+                systemMessageEl.textContent = "Tentativo di ripristinare il tunnel WebSocket in 5 secondi...";
+                reconnectTimeout = setTimeout(connectWebSocket, 5000);
+            } else {
+                setStatus("DISCONNESSO (Connessione chiusa)", "error");
             }
-        }
+        };
+        
+        ws.onerror = (err) => {
+            console.error("Errore WebSocket:", err);
+        };
+    }
 
-        /**
-         * Gestisce i messaggi in arrivo dal Durable Object.
-         * Il messaggio 'control' è la fonte di verità sullo stato Upstream.
-         */
-        function handleIncomingMessage(data) {
-            try {
-                const message = JSON.parse(data);
-                
-                // NUOVO: 0. MESSAGGI DI ALLERTA (GEOFENCING)
-                if (message.alert) {
-                    let alertMsg = '';
-                    const vesselName = message.alert.name || 'Una nave tracciata';
-                    const zoneName = message.alert.zone || 'una zona di interesse';
-                    
-                    if (message.alert.type === 'ARRIVAL_ALERT') {
-                        alertMsg = `<span class="text-yellow-200">${vesselName}</span> è **ENTRATA** nella zona Geofence: <span class="text-yellow-200">${zoneName}</span>!`;
-                    } else if (message.alert.type === 'DEPARTURE_ALERT') {
-                        alertMsg = `<span class="text-yellow-200">${vesselName}</span> è **USCITA** dalla zona Geofence: <span class="text-yellow-200">${zoneName}</span>!`;
-                    }
-                    if (alertMsg) {
-                        showAlertBanner(alertMsg);
-                    }
-                    // Non ritornare qui, la nave potrebbe avere anche un PositionReport
-                }
-
-                // 1. MESSAGGI DI CONTROLLO (STATO UPSTREAM: VERDE/ROSSO)
-                if (message.control) {
-                    const status = message.control.status;
-                    const msg = message.control.message;
-                    
-                    if (status === 'ONLINE') {
-                        setStatus("AIS STREAM ATTIVO", "ok");
-                        systemMessageEl.textContent = msg;
-                    } else if (status === 'OFFLINE' || status === 'ERROR') {
-                        // Questo è l'UNICO momento in cui lo stato diventa Rosso.
-                        setStatus("AIS STREAM DOWNSTREAM ERROR", "error"); 
-                        systemMessageEl.textContent = msg; 
-                    } else {
-                        setStatus("CONNESSIONE STABILITA. Richiesta Stream...", "connecting");
-                        systemMessageEl.textContent = msg || "In attesa di dati...";
-                    }
-                    return;
-                }
-                
-                // 2. MESSAGGI DI KEEP ALIVE (ka)
-                if (message.ka) {
-                    // Ignoriamo i keep-alive per pulizia console e UI
-                    return;
-                }
-
-                // 3. DATI NAVE
-                if (message.id && (message.lat !== undefined && message.lon !== undefined)) {
-                    const existing = vesselDataMap.get(message.id);
-                    vesselDataMap.set(message.id, { ...existing, ...message, marker: existing?.marker });
-                    applyFilters();
-                }
-            } catch (e) { 
-                console.error("Errore nel processare il messaggio:", e, data); 
-                systemMessageEl.textContent = "FATAL PARSE ERROR.";
-            }
-        }
-
-        function applyFilters() {
-            const filters = {
-                military: document.getElementById('filterMilitary').checked,
-                arms: document.getElementById('filterArms').checked,
-                israel: document.getElementById('filterIsrael').checked,
-                destination: document.getElementById('destinationPort').value.toLowerCase().trim()
-            };
-
-            const allFiltersUnchecked = !filters.military && !filters.arms && !filters.israel;
-            const vesselArray = Array.from(vesselDataMap.values());
-
-            const filteredVessels = vesselArray.filter(vessel => {
-                if (vessel.lat === null || vessel.lon === null) return false;
-
-                const matchesCategory = allFiltersUnchecked ||
-                    (filters.military && vessel.military) ||
-                    (filters.arms && vessel.arms) ||
-                    (filters.israel && vessel.is_israel_related);
-                
-                // La ricerca per destinazione include ora anche il campo 'last_port_call' in modo implicito se è presente
-                const matchesDestination = !filters.destination || 
-                    (vessel.destination || '').toLowerCase().includes(filters.destination) ||
-                    (vessel.last_port_call || '').toLowerCase().includes(filters.destination);
-
-                return matchesCategory && matchesDestination;
-            });
-
-            renderMapMarkers(filteredVessels);
-            renderVesselList(filteredVessels);
-        }
-
-        function connectWebSocket() {
-            if (reconnectTimeout) {
-                clearTimeout(reconnectTimeout);
-                reconnectTimeout = null;
-            }
-            if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
-            
-            setStatus("CONNESSO AL PROXY. Richiesta Stream...", "connecting");
-            ws = new WebSocket(WORKER_URL);
-            
-            ws.onopen = () => {
-                // Aspetta il messaggio 'control' dal server per confermare che lo stream è attivo (VERDE)
-                systemMessageEl.textContent = "Connessione WebSocket stabilita con successo. In attesa di stato Upstream...";
-            };
-            
-            ws.onmessage = (event) => handleIncomingMessage(event.data);
-            
-            // MODIFICA CHIAVE QUI: Non impostiamo lo stato su "Errore" se si chiude.
-            ws.onclose = (event) => {
-                // Solo se la chiusura non è stata pulita (cioè un'interruzione)
-                if (!event.wasClean) {
-                    // Indichiamo solo che ci stiamo ricollegando, mantenendo lo stato "Connecting"
-                    setStatus("CONNESSIONE INTERROTTA. Riconnessione in corso...", "connecting");
-                    systemMessageEl.textContent = "Tentativo di ripristinare il tunnel WebSocket in 5 secondi...";
-                    reconnectTimeout = setTimeout(connectWebSocket, 5000);
-                } else {
-                    setStatus("DISCONNESSO (Connessione chiusa)", "error");
-                }
-            };
-            
-            ws.onerror = (err) => {
-                console.error("Errore WebSocket:", err);
-                // Lasciamo che 'onclose' gestisca la logica di riconnessione
-            };
-        }
-
-        connectWebSocket(); 
-        document.addEventListener('DOMContentLoaded', applyFilters);
-    </script>
+    connectWebSocket(); 
+    document.addEventListener('DOMContentLoaded', applyFilters);
+    
+    // Aggiorna l'interfaccia ogni 30 secondi per ricalcolare lo stato 'obsoleto' e i tempi
+    setInterval(applyFilters, 30000); 
+</script>
 </body>
 </html>
